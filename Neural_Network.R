@@ -16,10 +16,180 @@ library(keras)
 library(plot3D)
 library(viridisLite)
 library(tensorflow)
+library(reticulate)
+library(tidyverse)
+library(tidymodels)
 
 source("Data preparation.R")
 source("Linear_model.R")
 
+
+# NEURAL NETWORK WITH KERAS
+features <- data %>% select(-cnt)
+labels <- data %>% select(cnt)
+
+normalizer <- layer_normalization(axis = -1L)
+
+normalizer %>% adapt(as.matrix(features))
+
+model <- keras_model_sequential()
+
+# Following the regression tutorial steps from tensorflow
+# inspect on data normalization
+print(normalizer$mean)
+first <- as.matrix(features[1,])
+cat('First example:', first)
+cat('Normalized:', as.matrix(normalizer(first)))
+
+# One-feature linear regression - predicting cnt by temp
+# First create normalized feature matrix
+temp <- matrix(features$temp)  # create matrix
+temp_normalizer <- layer_normalization(input_shape = shape(1), axis = NULL) # set normalization layer
+temp_normalizer %>% adapt(temp)  # adapt feature matrix to layer
+
+# setting up temp one layer model
+temp_model <- keras_model_sequential() %>%
+  temp_normalizer() %>%
+  layer_dense(units = 1)
+
+summary(temp_model)
+
+# Predict the first 30 temp values with the untrained model
+predict(temp_model, temp[1:30,])
+
+# so far no optimization at place - set model with mean_squared_error
+temp_model %>% compile(
+  optimizer = optimizer_adam(learning_rate = 0.1),
+  loss = 'mean_squared_error'
+)
+
+# Keras fit() function will now estimate 1oo epochs
+history <- temp_model %>% fit(
+  as.matrix(features$temp),
+  as.matrix(labels),
+  epochs = 100,
+  # Suppress logging.
+  verbose = 0,
+  # Calculate validation results on 20% of the training data.
+  validation_split = 0.2
+)
+
+plot(history)
+
+# Now as only two-dimensional model we can plot the reuslts
+x <- seq(0, 1, length.out = 1.01)
+y <- predict(temp_model, x)
+
+ggplot(data) +
+  geom_point(aes(x = temp, y = cnt, color = "data")) +
+  geom_line(data = data.frame(x, y), aes(x = x, y = y, color = "prediction"))
+
+
+# Multi-variable linear regression
+linear_model <- keras_model_sequential() %>%
+  normalizer() %>%
+  layer_dense(units = 1)
+
+predict(linear_model, as.matrix(features[1:10, ]))
+
+linear_model$layers[[2]]$kernel
+
+linear_model %>% compile(
+  optimizer = optimizer_adam(learning_rate = 0.1),
+  loss = 'mean_squared_error'
+)
+
+# Similar to above only with whole feature-space
+history <- linear_model %>% fit(
+  as.matrix(features),
+  as.matrix(labels),
+  epochs = 100,
+  # Suppress logging.
+  verbose = 0,
+  # Calculate validation results on 20% of the training data.
+  validation_split = 0.2
+)
+
+# Plot loss history
+plot(history)
+
+
+# Deep Neural Network with 3 layers and width of 16 neurons
+build_and_compile_model <- function(norm) {
+  model <- keras_model_sequential() %>%
+    norm() %>%
+    layer_dense(16, activation = 'relu') %>%
+    layer_dense(16, activation = 'relu') %>%
+    layer_dense(16, activation = 'relu') %>%
+    layer_dense(1)
+  
+  model %>% compile(
+    loss = 'mean_absolute_error',
+    optimizer = optimizer_adam(0.001)
+  )
+  
+  model
+}
+
+# first with single input
+dnn_temp_model <- build_and_compile_model(temp_normalizer)
+
+summary(dnn_temp_model)
+
+history <- dnn_temp_model %>% fit(
+  as.matrix(features$temp),
+  as.matrix(labels),
+  validation_split = 0.2,
+  verbose = 0,
+  epochs = 100
+)
+
+plot(history)
+
+# As its only 2-D it's easy to plot the prediction
+x <- seq(0.0, 1, length.out = 1.01)
+y <- predict(dnn_temp_model, x)
+
+ggplot(data) +
+  geom_point(aes(x = temp, y = cnt, color = "data")) +
+  geom_line(data = data.frame(x, y), aes(x = x, y = y, color = "prediction"))
+
+# Same approach with multi-input feature-space
+dnn_model <- build_and_compile_model(normalizer)
+
+history <- dnn_model %>% fit(
+  as.matrix(features),
+  as.matrix(labels),
+  validation_split = 0.2,
+  verbose = 0,
+  epochs = 100
+)
+
+plot(history)
+
+
+# Until here works well, have to document the steps
+
+
+# Just for practice predict outcome when temp is 0.28 and hum 0.81
+
+new_data <- data.frame(temp = 0.28, hum = 0.81)
+
+normalizer_nd <- layer_normalization(axis = -1L)
+
+normalizer_nd %>% adapt(as.matrix(new_data))
+
+predicted_values <- predict(dnn_model, as.matrix(new_data))
+print(predicted_values)
+
+
+
+
+
+
+
+
+# Notes
 
 # Initialize Sigmoid (S) and Relu functions for activation of the neuron
 S <- function(xb){ return(1/(1+exp(-xb))) }
@@ -97,92 +267,3 @@ ggplot(data=loss, aes(x=epoch, y=loss)) +
 
 sqrt(mean(lm_full$residuals^2))
 sqrt(mean(eps^2))
-
-
-# NEURAL NETWORK
-
-# Generate data
-f <- function(x){x*(x-1)*(sin(13*x)+cos(23*x)*(1-x))}
-x <- scale(dt_nn)
-y <- f(x)
-draw <- sample(1:17379,30)
-x_sample <- scale(dt_nn)[draw]
-y_sample <- scale(data$cnt)[draw]
-
-# Learning parameters
-neurons <- 5
-learning_rate <- 0.1
-epochs <- 5000
-
-# Set up data
-X    <-  dt_nn
-N    <-  length(x_sample)
-loss <-  data.frame(loss=numeric(epochs), epoch = numeric(epochs))
-
-# Initialize
-Mu     <- c(runif(neurons)) 
-Sigma  <- c(runif(neurons)) 
-B_LOut <- matrix(c(runif(neurons)), nrow=25, ncol = neurons)
-b_LOut <- c(runif(25)) 
-
-for (i in 1:epochs){
-  
-  # Forward pass
-  xb <- (X-Mu) # for use in the backward pass
-  XB <- (xb^2) # for use the backward pass
-  A_L1 <- exp((-1/(Sigma)^2)*XB)
-  A_LOut <- (B_LOut %*% A_L1) + b_LOut  
-  eps <- t(y_sample)-A_LOut
-  
-  loss$loss[[i]] <- mean(eps^2)
-  loss$epoch[[i]] <- i
-  
-  # Backward pass
-  dXB_LOut    <- -2*eps
-  dXB         <- (t(B_LOut) %*% dXB_LOut)*(A_L1)
-  dXB_Mu      <- dXB*((1/(Sigma)^2)*xb) 
-  dXB_Sigma   <- dXB*((1/(Sigma)^3)*XB)
-  
-  b_LOut_Grad <- rowMeans(dXB_LOut)
-  B_LOut_Grad <- (dXB_LOut %*% t(A_L1)) / N
-  Mu_Grad     <- (dXB_Mu %*% x_sample) / N
-  Sigma_Grad  <- (dXB_Sigma %*% x_sample) / N
-  
-  b_LOut      <- b_LOut - (learning_rate * b_LOut_Grad)
-  B_LOut      <- B_LOut - (learning_rate * B_LOut_Grad)
-  Mu          <- Mu - as.vector(learning_rate * Mu_Grad)
-  Sigma       <- Sigma - as.vector(learning_rate * Sigma_Grad)
-}
-
-ggplot(data=loss, aes(x=epoch, y=loss)) +
-  geom_line() +
-  labs(
-    x = "epoch",
-    y = "loss") +
-  theme_minimal() +
-  theme(axis.line = element_line(color = "#000000"))
-  
-  # DOenst run yet --> TODO fix
-
-
-# NEURAL NETWORK WITH KERAS
-X <- scale(dt_nn)
-y <- scale(data$cnt)
-
-normalize %>% adapt(X)
-
-model <- keras_model_sequential()
-
-model %>% 
-  
-  # L1: Preprocessing
-  normalize() %>%
-  
-  # L2: Hidden
-  layer_dense(name="HiddenLayer",
-              units = 8, 
-              activation = 'relu') %>%
-  
-  # L3: Output
-  layer_dense(name = "OutputLayer",
-              units = 1)
