@@ -1,14 +1,7 @@
 # Neural Network
 
-# ! Not Functioning yet
-
-# Questions in advance:
-#   1. How much input?
-#   2. How many Hidden layers?
-#   3. Width of the layer? (how many neurons?)
-#   4. What kind of activation function? (perceptron: logistic? tahn? Relu?)
-#   5. Stepsize of the gradient
-
+source("Data preparation.R")
+source("Linear_model.R")
 
 library(data.table)
 library(ggplot2)
@@ -20,118 +13,132 @@ library(reticulate)
 library(tidyverse)
 library(tidymodels)
 
-source("Data preparation.R")
-source("Linear_model.R")
+
 
 
 # NEURAL NETWORK WITH KERAS
-features <- data %>% select(-cnt)
-labels <- data %>% select(cnt)
 
-normalizer <- layer_normalization(axis = -1L)
+# Define dependent and independent variables
+features <- data %>% select(-cnt) 
+labels <- data %>% select(cnt)  # dependent (label)
 
-normalizer %>% adapt(as.matrix(features))
+test_features <- data_test %>% select(-cnt)
+test_labels <- data_test %>% select(cnt)
 
-model <- keras_model_sequential()
+# Normalize to aviod scale issues
+normalizer <- layer_normalization(axis = -1L)  # Normalize layer used in Keras
 
-# Following the regression tutorial steps from tensorflow
-# inspect on data normalization
-print(normalizer$mean)
-first <- as.matrix(features[1,])
-cat('First example:', first)
-cat('Normalized:', as.matrix(normalizer(first)))
-
-# One-feature linear regression - predicting cnt by temp
-# First create normalized feature matrix
-temp <- matrix(features$temp)  # create matrix
-temp_normalizer <- layer_normalization(input_shape = shape(1), axis = NULL) # set normalization layer
-temp_normalizer %>% adapt(temp)  # adapt feature matrix to layer
-
-# setting up temp one layer model
-temp_model <- keras_model_sequential() %>%
-  temp_normalizer() %>%
-  layer_dense(units = 1)
-
-summary(temp_model)
-
-# Predict the first 30 temp values with the untrained model
-predict(temp_model, temp[1:30,])
-
-# so far no optimization at place - set model with mean_squared_error
-temp_model %>% compile(
-  optimizer = optimizer_adam(learning_rate = 0.1),
-  loss = 'mean_squared_error'
-)
-
-# Keras fit() function will now estimate 1oo epochs
-history <- temp_model %>% fit(
-  as.matrix(features$temp),
-  as.matrix(labels),
-  epochs = 100,
-  # Suppress logging.
-  verbose = 0,
-  # Calculate validation results on 20% of the training data.
-  validation_split = 0.2
-)
-
-plot(history)
-
-# Now as only two-dimensional model we can plot the reuslts
-x <- seq(0, 1, length.out = 1.01)
-y <- predict(temp_model, x)
-
-ggplot(data) +
-  geom_point(aes(x = temp, y = cnt, color = "data")) +
-  geom_line(data = data.frame(x, y), aes(x = x, y = y, color = "prediction"))
+normalizer %>% adapt(as.matrix(features)) # apply layer on feature space
 
 
-# Multi-variable linear regression
-linear_model <- keras_model_sequential() %>%
-  normalizer() %>%
-  layer_dense(units = 1)
+# ONE FEAUTURE LINEAR REGRESSION WITH KERAS
 
-predict(linear_model, as.matrix(features[1:10, ]))
+  # First create normalized feature matrix
+  temp <- matrix(features$temp)  # create matrix
+  temp_normalizer <- layer_normalization(input_shape = shape(1), axis = NULL) # set normalization layer
+  temp_normalizer %>% adapt(temp)  # adapt feature matrix to layer
+  
+  # setting up temp one layer model
+  temp_model <- keras_model_sequential() %>%
+    temp_normalizer() %>%
+    layer_dense(units = 1)
+  
+  summary(temp_model)
+  
+  # Predict the first 30 temp values with the untrained model
+  predict(temp_model, temp[1:30,])
+  
+  # so far no optimization at place - set model with mean_squared_error
+  temp_model %>% compile(
+    optimizer = optimizer_adam(learning_rate = 0.1),
+    loss = 'mean_squared_error'
+  )
+  
+  # Keras fit() function will now estimate 50 epochs
+  history <- temp_model %>% fit(
+    as.matrix(features$temp),
+    as.matrix(labels),
+    epochs = 50,
+    # Suppress logging.
+    verbose = 0,
+    # Calculate validation results on 20% of the training data.
+    validation_split = 0.2
+  )
+  
+  plot(history)
+  
+  # Now as only two-dimensional model we can plot the reuslts
+  x <- seq(0, 1, length.out = 1.01)
+  y <- predict(temp_model, x)
+  
+  ggplot(data) +
+    geom_point(aes(x = temp, y = cnt, color = "data")) +
+    geom_line(data = data.frame(x, y), aes(x = x, y = y, color = "prediction"))
 
-linear_model$layers[[2]]$kernel
+  test_results <- list()
+  test_results[["temp_model"]] <- temp_model %>% evaluate(
+    as.matrix(test_features$temp),
+    as.matrix(test_labels),
+    verbose = 0
+  )
 
-linear_model %>% compile(
-  optimizer = optimizer_adam(learning_rate = 0.1),
-  loss = 'mean_squared_error'
-)
+# MULTI INPUT LINEAR REGRESSION
+  linear_model <- keras_model_sequential() %>%
+    normalizer() %>%
+    layer_dense(units = 1)
+  
+  predict(linear_model, as.matrix(features[1:10, ]))
+  
+  linear_model$layers[[2]]$kernel
+  
+  linear_model %>% compile(
+    optimizer = optimizer_adam(learning_rate = 0.1),
+    loss = 'mean_squared_error'
+  )
+  
+  # Similar to above only with whole feature-space
+  history <- linear_model %>% fit(
+    as.matrix(features),
+    as.matrix(labels),
+    epochs = 50,
+    # Suppress logging.
+    verbose = 0,
+    # Calculate validation results on 20% of the training data.
+    validation_split = 0.2
+  )
+  
+  # Plot loss history
+  plot(history)
+  
+  # Collect results on test data
+  test_results[['linear_model']] <- linear_model %>%
+    evaluate(
+      as.matrix(test_features),
+      as.matrix(test_labels),
+      verbose = 0
+    )
 
-# Similar to above only with whole feature-space
-history <- linear_model %>% fit(
-  as.matrix(features),
-  as.matrix(labels),
-  epochs = 100,
-  # Suppress logging.
-  verbose = 0,
-  # Calculate validation results on 20% of the training data.
-  validation_split = 0.2
-)
 
-# Plot loss history
-plot(history)
+### DEEP NEURAL NETWORKS
 
-
-# Deep Neural Network with 3 layers and width of 16 neurons
+# Setting up the model
 build_and_compile_model <- function(norm) {
   model <- keras_model_sequential() %>%
     norm() %>%
-    layer_dense(16, activation = 'relu') %>%
-    layer_dense(16, activation = 'relu') %>%
+    layer_dense(16, activation = 'relu') %>% # DNN with 3 layers 
+    layer_dense(16, activation = 'relu') %>% # and width of 16 neurons
     layer_dense(16, activation = 'relu') %>%
     layer_dense(1)
   
   model %>% compile(
-    loss = 'mean_absolute_error',
+    loss = 'mean_absolute_error',           # Attention: absolute loss here (alt. squared)
     optimizer = optimizer_adam(0.001)
   )
   
   model
 }
 
-# first with single input
+### SINGLE INPUT DNN
 dnn_temp_model <- build_and_compile_model(temp_normalizer)
 
 summary(dnn_temp_model)
@@ -141,7 +148,7 @@ history <- dnn_temp_model %>% fit(
   as.matrix(labels),
   validation_split = 0.2,
   verbose = 0,
-  epochs = 100
+  epochs = 50    # 50 epochs doesnt require that much computation and sufficient to bottom out loss
 )
 
 plot(history)
@@ -154,33 +161,74 @@ ggplot(data) +
   geom_point(aes(x = temp, y = cnt, color = "data")) +
   geom_line(data = data.frame(x, y), aes(x = x, y = y, color = "prediction"))
 
-# Same approach with multi-input feature-space
-dnn_model <- build_and_compile_model(normalizer)
+# Collect results on test data
+test_results[['dnn_temp_model']] <- dnn_horsepower_model %>% evaluate(
+  as.matrix(test_features$temp),
+  as.matrix(test_labels),
+  verbose = 0
+)
 
-history <- dnn_model %>% fit(
+# MULTI INPUT DNN
+dnn_model <- build_and_compile_model(normalizer)   # store new model with same model-set up 
+                                                   # but other Input Matrix
+history <- dnn_model %>% fit(        # Run model with fit command
   as.matrix(features),
   as.matrix(labels),
   validation_split = 0.2,
   verbose = 0,
-  epochs = 100
+  epochs = 50
 )
 
 plot(history)
 
+test_results[['dnn_model']] <- dnn_model %>% evaluate(
+  as.matrix(test_features),
+  as.matrix(test_labels),
+  verbose = 0
+)
 
-# Until here works well, have to document the steps
+
+# PERFORMANCE
+
+# All results of models trained on the test data stored under "test_results"
+sapply(test_results, function(x) x)
+
+# PREDICTION ON TEST DATA
+test_predictions <- predict(dnn_model, as.matrix(test_features))
+
+# Plot prediction 
+ggplot(data.frame(pred = as.numeric(test_predictions), cnt = test_labels$cnt)) +
+  geom_point(aes(x = pred, y = cnt)) +
+  geom_abline(intercept = 0, slope = 1, color = "blue")
+
+# Error distribution 
+qplot(test_predictions - test_labels$cnt, geom = "density")
 
 
-# Just for practice predict outcome when temp is 0.28 and hum 0.81
+# Store Model
+save_model_tf(dnn_model, 'dnn_model')
 
-new_data <- data.frame(temp = 0.28, hum = 0.81)
 
-normalizer_nd <- layer_normalization(axis = -1L)
 
-normalizer_nd %>% adapt(as.matrix(new_data))
 
-predicted_values <- predict(dnn_model, as.matrix(new_data))
-print(predicted_values)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -190,6 +238,28 @@ print(predicted_values)
 
 
 # Notes
+# Just for practice predict outcome when temp is 0.28 and hum 0.81
+
+new_data <- data.frame(temp = 0.28, hum = 0.81)
+
+x_new <- matrix(c(0,28), ncol = 1)
+dnn_temp_model %>% predict(x=x_new,verbose=0)
+
+random_values <- runif(25, min = -15, max = 15)
+df <- data.frame(Random_Column = random_values)
+
+predict <- dnn_model %>% predict(x=x_new,verbose=0)
+
+predicted_values <- predict(dnn_model, as.matrix(x_new))
+print(predicted_values)
+
+# Following the regression tutorial steps from tensorflow
+# inspect on data normalization
+print(normalizer$mean)
+first <- as.matrix(features[1,])
+cat('First example:', first)
+cat('Normalized:', as.matrix(normalizer(first)))
+
 
 # Initialize Sigmoid (S) and Relu functions for activation of the neuron
 S <- function(xb){ return(1/(1+exp(-xb))) }

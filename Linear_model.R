@@ -4,14 +4,19 @@ library(data.table)
 library(ggplot2)
 
 # baseline linear model
-  lm_basic <- lm(cnt ~ season + yr + mnth + hr + holiday + weekday + workingday +
-                 weathersit + temp + atemp + hum + windspeed + mnth,data = data) 
+  lm_basic <- lm(cnt ~ yr + mnth + hr + holiday + workingday +
+                 Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
+                 Friday + Saturday + weathersit + temp + atemp + hum + windspeed + mnth,
+                 data = data) 
   residuals <- lm_basic$residuals
   empirical_loss_basic <- sum(residuals^2)
   
   # Adding a lagged variabl
-  lm_lagged <- lm(cnt ~ lagged_cnt + season + yr + mnth + hr + holiday + weekday + workingday +
-                   weathersit + temp + atemp + hum + windspeed + mnth,data = data) 
+  lm_lagged <- lm(cnt ~ lagged_cnt + yr + mnth + hr + holiday  + workingday +
+                  weathersit + temp + atemp + hum + windspeed + 
+                  Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
+                  Friday + Saturday + mnth,
+                  data = data) 
   residuals <- lm_lagged$residuals
   empirical_loss_lagged <- sum(residuals^2)
   
@@ -20,23 +25,28 @@ library(ggplot2)
   data$sq_temp <- data$temp^2
   data$sq_hr <- data$hr^2
   
-  lm_sq <- lm(cnt ~ lagged_cnt + season + yr + mnth + sq_mnth + hr + sq_hr + holiday + 
-                 weekday + workingday + weathersit + temp + sq_temp + atemp + 
+  lm_sq <- lm(cnt ~ lagged_cnt + yr + mnth + sq_mnth + hr + sq_hr + holiday + 
+                 Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
+                 Friday + Saturday + workingday + weathersit + temp + sq_temp + atemp + 
                  hum + windspeed,data = data)
   summary(lm_sq)
   residuals <- lm_sq$residuals
   empirical_loss_sq <- sum(residuals^2)
   
   # including interaction terms to the lagged model
-  lm_interaction <- lm(cnt ~ lagged_cnt + season + yr + mnth + hr + holiday + weekday + workingday +
+  lm_interaction <- lm(cnt ~ lagged_cnt + yr + mnth + hr + holiday  + workingday +
                   (workingday*temp) + weathersit + temp + atemp + hum + windspeed + 
+                  Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
+                  Friday + Saturday +
                   (mnth*temp),data = data) 
   residuals <- lm_interaction$residuals
   empirical_loss_interaction <- sum(residuals^2)
   
   # Including all adjustments
-  lm_full <- lm(cnt ~ lagged_cnt + season + yr + mnth + sq_mnth + hr + sq_hr + holiday + weekday + workingday +
-                  weathersit + temp + sq_temp + atemp + hum + windspeed + (mnth*temp),data = data)
+  lm_full <- lm(cnt ~ lagged_cnt + yr + mnth + sq_mnth + hr + sq_hr + holiday + workingday +
+                  Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
+                  Friday + Saturday + weathersit + temp + sq_temp + atemp + hum + windspeed + (mnth*temp),
+                  data = data)
   residuals <- lm_full$residuals
   empirical_loss_full <- sum(residuals^2)
 
@@ -60,7 +70,7 @@ result <- data.table(
 
 
 
-### Expected loss by sampling the data - (later will bootstrap)
+### EXPECTED LOSS by sampling the data - (later will bootstrap)
 
 # Draw 10 samples out of the data and perform the full linear model on each
   S <- 10 # number of samples
@@ -77,8 +87,10 @@ result <- data.table(
   
   # Run a model on each sample
   for (i in 1:S) {
-    lm_losses <- lm(formula = cnt ~ season + yr + mnth + sq_mnth + hr + holiday + weekday + workingday +
-                      weathersit + temp + sq_temp + atemp + hum + windspeed + (mnth*temp), data = samples[[i]])
+    lm_losses <- lm(formula = cnt ~  yr + mnth + sq_mnth + hr + holiday  + workingday +
+                    weathersit + temp + sq_temp + atemp + hum + windspeed + (mnth*temp) +
+                    Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
+                    Friday + Saturday, data = samples[[i]])
     # store model parameters
     models <- rbind(models, lm_losses$coefficients)
     # store model performance on sample and population
@@ -92,8 +104,10 @@ result <- data.table(
   
   ggplot(data = losses, aes(y=MSE, x=model, fill= Loss)) +
     geom_bar(position="dodge", stat="identity") +
-    geom_hline(yintercept = sum(mean(lm(formula = cnt ~ season + yr + mnth + sq_mnth + hr + holiday + weekday + workingday +
-                                             weathersit + temp + sq_temp + atemp + hum + windspeed + (mnth*temp),data=data)$residuals^2)),
+    geom_hline(yintercept = sum(mean(lm(formula = cnt ~  yr + mnth + sq_mnth + hr + holiday  + workingday +
+                    weathersit + temp + sq_temp + atemp + hum + windspeed + (mnth*temp) +
+                    Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
+                    Friday + Saturday,data=data)$residuals^2)),
                color="#4CA7DE", linetype="dashed", size=1) +
     labs(
       x = "Models",

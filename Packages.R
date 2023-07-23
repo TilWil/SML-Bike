@@ -14,6 +14,7 @@ install.packages("tensorflow")
 install.packages("reticulate")
 install.packages("miniconda")
 install.packages("tidymodels")
+install.packages("ada")
 
 
 # To install tensorflow do either:
