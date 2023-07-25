@@ -1,4 +1,7 @@
 # Linear regression model
+
+# source("Data preparation.R")
+
 library(stargazer)
 library(data.table)
 library(ggplot2)
@@ -125,7 +128,39 @@ result <- data.table(
 
 
 
-
+# RERUN FULL MODEL WITH PCA DATA
+  
+  # Need to include squared terms
+  data_PC18$sq_mnth <- data_PC18$mnth^2
+  data_PC18$sq_temp <- data_PC18$temp^2
+  data_PC18$sq_hr <- data_PC18$hr^2
+  
+  # Including all adjustments
+  lm_pca_full <- lm(cnt ~ lagged_cnt + yr + mnth + sq_mnth + hr + sq_hr + holiday + workingday +
+                  Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
+                  Friday + Saturday + weathersit + temp + sq_temp + atemp + hum + windspeed + (mnth*temp),
+                data = data_PC18)
+  residuals <- lm_pca_full$residuals
+  empirical_loss_pca_full <- sum(residuals^2)
+  
+  # compare pca to non-pca
+  stargazer(lm_full, lm_pca_full, type = "text", style = "aer") # R² = 1 with pca
+  
+  
+  # Inspect on empirical loss again
+  result <- data.table(
+    " " = "empirical loss",
+    loss_basic = empirical_loss_basic,
+    loss_lagged = empirical_loss_lagged,
+    loss_interaction = empirical_loss_interaction,
+    loss_sq = empirical_loss_sq,
+    loss_full = empirical_loss_full,
+    loss_pca_full = empirical_loss_pca_full
+    
+  )
+  
+  
+  
 
 
 

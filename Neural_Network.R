@@ -19,22 +19,25 @@ library(tidymodels)
 # NEURAL NETWORK WITH KERAS
 
 # Define dependent and independent variables
-features <- data %>% select(-cnt) 
-labels <- data %>% select(cnt)  # dependent (label)
+train_features <- data_training %>% select(-cnt) 
+train_labels <- data_training %>% select(cnt)  # dependent (label)
 
 test_features <- data_test %>% select(-cnt)
 test_labels <- data_test %>% select(cnt)
 
 # Normalize to aviod scale issues
-normalizer <- layer_normalization(axis = -1L)  # Normalize layer used in Keras
+normalizer <- layer_normalization(axis = -1)  # -1 so all features are normalized independently
 
-normalizer %>% adapt(as.matrix(features)) # apply layer on feature space
+normalizer %>% adapt(as.matrix(train_features)) # apply layer on feature space
 
+test_normalizer <- layer_normalization(axis = -1)
+
+test_normalizer %>% adapt(as.matrix(test_features))
 
 # ONE FEAUTURE LINEAR REGRESSION WITH KERAS
 
   # First create normalized feature matrix
-  temp <- matrix(features$temp)  # create matrix
+  temp <- matrix(train_features$temp)  # create matrix
   temp_normalizer <- layer_normalization(input_shape = shape(1), axis = NULL) # set normalization layer
   temp_normalizer %>% adapt(temp)  # adapt feature matrix to layer
   
@@ -56,8 +59,8 @@ normalizer %>% adapt(as.matrix(features)) # apply layer on feature space
   
   # Keras fit() function will now estimate 50 epochs
   history <- temp_model %>% fit(
-    as.matrix(features$temp),
-    as.matrix(labels),
+    as.matrix(train_features$temp),
+    as.matrix(train_labels),
     epochs = 50,
     # Suppress logging.
     verbose = 0,
@@ -82,14 +85,12 @@ normalizer %>% adapt(as.matrix(features)) # apply layer on feature space
     verbose = 0
   )
 
-# MULTI INPUT LINEAR REGRESSION
+# MULTI FEATURE LINEAR REGRESSION
   linear_model <- keras_model_sequential() %>%
     normalizer() %>%
     layer_dense(units = 1)
   
-  predict(linear_model, as.matrix(features[1:10, ]))
-  
-  linear_model$layers[[2]]$kernel
+  predict(linear_model, as.matrix(train_features[1:10, ]))
   
   linear_model %>% compile(
     optimizer = optimizer_adam(learning_rate = 0.1),
@@ -98,8 +99,8 @@ normalizer %>% adapt(as.matrix(features)) # apply layer on feature space
   
   # Similar to above only with whole feature-space
   history <- linear_model %>% fit(
-    as.matrix(features),
-    as.matrix(labels),
+    as.matrix(train_features),
+    as.matrix(train_labels),
     epochs = 50,
     # Suppress logging.
     verbose = 0,
@@ -132,7 +133,7 @@ build_and_compile_model <- function(norm) {
   
   model %>% compile(
     loss = 'mean_absolute_error',           # Attention: absolute loss here (alt. squared)
-    optimizer = optimizer_adam(0.001)
+    optimizer = optimizer_adam(0.001)         # Learning rate of the GD
   )
   
   model
@@ -144,11 +145,11 @@ dnn_temp_model <- build_and_compile_model(temp_normalizer)
 summary(dnn_temp_model)
 
 history <- dnn_temp_model %>% fit(
-  as.matrix(features$temp),
-  as.matrix(labels),
+  as.matrix(train_features$temp),
+  as.matrix(train_labels),
   validation_split = 0.2,
   verbose = 0,
-  epochs = 50    # 50 epochs doesnt require that much computation and sufficient to bottom out loss
+  epochs = 100    # 50 epochs doesnt require that much computation and sufficient to bottom out loss
 )
 
 plot(history)
@@ -162,7 +163,7 @@ ggplot(data) +
   geom_line(data = data.frame(x, y), aes(x = x, y = y, color = "prediction"))
 
 # Collect results on test data
-test_results[['dnn_temp_model']] <- dnn_horsepower_model %>% evaluate(
+test_results[['dnn_temp_model']] <- dnn_temp_model %>% evaluate(
   as.matrix(test_features$temp),
   as.matrix(test_labels),
   verbose = 0
@@ -171,15 +172,15 @@ test_results[['dnn_temp_model']] <- dnn_horsepower_model %>% evaluate(
 # MULTI INPUT DNN
 dnn_model <- build_and_compile_model(normalizer)   # store new model with same model-set up 
                                                    # but other Input Matrix
-history <- dnn_model %>% fit(        # Run model with fit command
-  as.matrix(features),
-  as.matrix(labels),
+dnn_history <- dnn_model %>% fit(        # Run model with fit command
+  as.matrix(train_features),
+  as.matrix(train_labels),
   validation_split = 0.2,
   verbose = 0,
-  epochs = 50
+  epochs = 100
 )
 
-plot(history)
+plot(dnn_history)
 
 test_results[['dnn_model']] <- dnn_model %>% evaluate(
   as.matrix(test_features),
@@ -187,14 +188,94 @@ test_results[['dnn_model']] <- dnn_model %>% evaluate(
   verbose = 0
 )
 
+# DNN WITH VARYING LEARNING RATES
+
+# APPROACH:
+  # To inspect on varying settings of the learning rate on model performance we set-up 
+  # a loop within the deep neural netweork is trained on the single "temp" input (to 
+  # reduce computation only "temp") 
+  # Therefore: 
+  # 1. specify model with option of varying optimizer settings
+  # 2. Loop different DNNs on the training data and saver results in "training_histories"
+  # 3. Plot results in "training_histories" with a little plot loop 
+
+# 1. Function to build and compile the model with a given normalization and learning rate
+build_and_compile_model <- function(norm, learning_rate) {
+  model <- keras_model_sequential() %>%
+    norm() %>%
+    layer_dense(16, activation = 'relu') %>%
+    layer_dense(16, activation = 'relu') %>%
+    layer_dense(16, activation = 'relu') %>%
+    layer_dense(1)
+  
+  model %>% compile(
+    loss = 'mean_absolute_error',
+    optimizer = optimizer_adam(learning_rate) # Set the learning rate here
+  )
+  
+  model
+}
+
+# List of learning rates 
+learning_rate <- c(0.1, 0.01, 0.001)
+
+# List to store training histories
+training_histories <- list()
+
+# 2. Loop through each learning rate and train the model
+for (lr in learning_rate) {
+  # Create the model with the specified learning rate
+  dnn_temp_model <- build_and_compile_model(temp_normalizer, lr)
+  
+  # Train the model with training data
+  history <- dnn_temp_model %>% fit(
+    as.matrix(train_features$temp),
+    as.matrix(train_labels),
+    validation_split = 0.2,
+    verbose = 0,
+    epochs = 50
+  )
+  
+  # Store the training history in the list
+  training_histories[[as.character(lr)]] <- history
+}
+
+
+# 3. Plot all the training and validation losses together
+
+# Save the plot as a PDF file
+pdf("training_rates_plots.pdf")
+
+par(mfrow = c(1, length(learning_rate)))  # Plotting layout - arranges 3 plots side by side
+for (i in seq_along(learning_rate)) {
+  lr <- learning_rate[i]
+  history <- training_histories[[as.character(lr)]]
+  
+  plot(history$metrics$loss, type = "l", col = "blue", main = paste("Learning Rate =", lr))
+  lines(history$metrics$val_loss, col = "red")
+  legend("topright", c("Training Loss", "Validation Loss"), col = c("blue", "red"), lty = 1)
+}
+par(mfrow = c(1, 1))  # Reset the plotting layout to default
+
+# close pdf file
+dev.off()
+
 
 # PERFORMANCE
 
 # All results of models trained on the test data stored under "test_results"
 sapply(test_results, function(x) x)
 
+# Just create random variables for 24 features and predict cnt outcome based on model
+random_prediction <- matrix(c(0,6,14,0,1,2,0.30, 0.28, 0.66, 0.32, 340, 0,1,0,0,0,0,0,1,0,0,0))
+random_prediction <- t(random_prediction) # transpose column into matrix
+
+
 # PREDICTION ON TEST DATA
 test_predictions <- predict(dnn_model, as.matrix(test_features))
+test_predictions2 <- predict(dnn_model, as.matrix(random_prediction))
+
+summary(test_predictions2)  
 
 # Plot prediction 
 ggplot(data.frame(pred = as.numeric(test_predictions), cnt = test_labels$cnt)) +
@@ -207,6 +288,67 @@ qplot(test_predictions - test_labels$cnt, geom = "density")
 
 # Store Model
 save_model_tf(dnn_model, 'dnn_model')
+
+
+
+# RERUN MODEL on PCA dimensionality reduced data
+pca_training_sample <- data_PC18[,sample(.N, floor(.N*.80))]
+pca_data_training <- data_PC18[pca_training_sample]
+pca_data_test <- data_PC18[-pca_training_sample]
+
+pca_train_features <- pca_data_training %>% select(-cnt)
+pca_train_labels <- pca_data_training %>% select(cnt)
+
+pca_test_features <- pca_data_test %>% select(-cnt)
+pca_test_labels <- pca_data_test %>% select(cnt)
+
+# Same procedure with other data and no normalization layer as pca data already scaled
+build_and_compile_model <- function(norm) {
+  model <- keras_model_sequential() %>%
+    layer_dense(16, activation = 'relu') %>% # DNN with 3 layers 
+    layer_dense(16, activation = 'relu') %>% # and width of 16 neurons
+    layer_dense(16, activation = 'relu') %>%
+    layer_dense(1)
+  
+  model %>% compile(
+    loss = 'mean_absolute_error',           # Attention: absolute loss here (alt. squared)
+    optimizer = optimizer_adam(0.001)         # Learning rate of the GD
+  )
+  
+  model
+}
+
+dnn_pca_model <- build_and_compile_model()   # store new model with same model-set up 
+# but other Input Matrix
+pca_history <- dnn_pca_model %>% fit(        # Run model with fit command
+  as.matrix(pca_train_features),
+  as.matrix(pca_train_labels),
+  validation_split = 0.2,
+  verbose = 0,
+  epochs = 100
+)
+
+
+
+# compare loss reduction
+par(mfrow = c(1, 2))  # Plotting layout - arranges 3 plots side by side
+
+plot(pca_history)
+plot(dnn_history)
+par(mfrow = c(1, 1))  # Plotting layout - arranges 3 plots side by side
+
+test_results[['dnn_pca_model']] <- dnn_pca_model %>% evaluate(
+  as.matrix(pca_test_features),
+  as.matrix(pca_test_labels),
+  verbose = 0
+)
+
+# compare test results
+sapply(test_results, function(x) x)
+
+
+
+### END
 
 
 

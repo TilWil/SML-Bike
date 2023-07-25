@@ -5,6 +5,7 @@
 rm(list = ls())
 
 library(dplyr)
+library(data.table)
 
 # data <- read.csv("C:\\Users\\tilma\\Documents\\Uni\\Master Economics\\Machine Learning\\Statistical Machine Learning\\Data\\hour.csv")
 data <- fread(file = "C:\\Users\\tilma\\Documents\\Uni\\Master Economics\\Machine Learning\\Statistical Machine Learning\\Data\\hour.csv", sep = ",")
@@ -49,13 +50,20 @@ colnames(weekday_dummies) <- levels(data$weekday)
 data <- cbind(data, season_dummies, weekday_dummies)
 data <- data[, !"season", with = FALSE]
 data <- data[, !"weekday", with = FALSE]
+data <- data[, !"instant", with = FALSE]
+data <- data[, !"registered", with = FALSE] # need to exclude both as they are 
+data <- data[, !"casual", with = FALSE]     # sub-measures of the label "cnt"
+
+
 
 # Convert all variables to numeric using lapply and as.numeric
 data[] <- lapply(data, as.numeric)
 
+# Create Test and Training dataset (80% of data) and test dataset (20% of data)
+training_sample <- data[,sample(.N, floor(.N*.80))]
+data_training <- data[training_sample]
+data_test <- data[-training_sample]
 
-# Exclude dependent variable for later purpose in neural networks
-dt_nn <- data[, !"cnt", with = FALSE]
 
   
 
