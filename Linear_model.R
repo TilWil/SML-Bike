@@ -5,11 +5,12 @@
 library(stargazer)
 library(data.table)
 library(ggplot2)
+library(caret)
 
 # baseline linear model
   lm_basic <- lm(cnt ~ yr + mnth + hr + holiday + workingday +
                  Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
-                 Friday + Saturday + weathersit + temp + atemp + hum + windspeed + mnth,
+                 Friday + Saturday + Sunday + weathersit + temp + atemp + hum + windspeed + mnth,
                  data = data) 
   residuals <- lm_basic$residuals
   empirical_loss_basic <- sum(residuals^2)
@@ -18,7 +19,7 @@ library(ggplot2)
   lm_lagged <- lm(cnt ~ lagged_cnt + yr + mnth + hr + holiday  + workingday +
                   weathersit + temp + atemp + hum + windspeed + 
                   Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
-                  Friday + Saturday + mnth,
+                  Friday + Saturday + Sunday + mnth,
                   data = data) 
   residuals <- lm_lagged$residuals
   empirical_loss_lagged <- sum(residuals^2)
@@ -30,7 +31,7 @@ library(ggplot2)
   
   lm_sq <- lm(cnt ~ lagged_cnt + yr + mnth + sq_mnth + hr + sq_hr + holiday + 
                  Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
-                 Friday + Saturday + workingday + weathersit + temp + sq_temp + atemp + 
+                 Friday + Saturday + Sunday + workingday + weathersit + temp + sq_temp + atemp + 
                  hum + windspeed,data = data)
   summary(lm_sq)
   residuals <- lm_sq$residuals
@@ -40,7 +41,7 @@ library(ggplot2)
   lm_interaction <- lm(cnt ~ lagged_cnt + yr + mnth + hr + holiday  + workingday +
                   (workingday*temp) + weathersit + temp + atemp + hum + windspeed + 
                   Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
-                  Friday + Saturday +
+                  Friday + Saturday + Sunday +
                   (mnth*temp),data = data) 
   residuals <- lm_interaction$residuals
   empirical_loss_interaction <- sum(residuals^2)
@@ -48,12 +49,13 @@ library(ggplot2)
   # Including all adjustments
   lm_full <- lm(cnt ~ lagged_cnt + yr + mnth + sq_mnth + hr + sq_hr + holiday + workingday +
                   Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
-                  Friday + Saturday + weathersit + temp + sq_temp + atemp + hum + windspeed + (mnth*temp),
+                  Friday + Saturday + Sunday + weathersit + temp + sq_temp + atemp + hum + windspeed + (mnth*temp),
                   data = data)
   residuals <- lm_full$residuals
   empirical_loss_full <- sum(residuals^2)
 
 
+  
   stargazer(lm_basic, lm_lagged, lm_interaction, lm_full, type = "text", style = "aer")
   # F-stat in all cases very high - R² doesnt improve much with complexity, except 
   # the lagged add-on
@@ -93,7 +95,7 @@ result <- data.table(
     lm_losses <- lm(formula = cnt ~  yr + mnth + sq_mnth + hr + holiday  + workingday +
                     weathersit + temp + sq_temp + atemp + hum + windspeed + (mnth*temp) +
                     Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
-                    Friday + Saturday, data = samples[[i]])
+                    Friday + Saturday + Sunday, data = samples[[i]])
     # store model parameters
     models <- rbind(models, lm_losses$coefficients)
     # store model performance on sample and population
@@ -110,7 +112,7 @@ result <- data.table(
     geom_hline(yintercept = sum(mean(lm(formula = cnt ~  yr + mnth + sq_mnth + hr + holiday  + workingday +
                     weathersit + temp + sq_temp + atemp + hum + windspeed + (mnth*temp) +
                     Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
-                    Friday + Saturday,data=data)$residuals^2)),
+                    Friday + Saturday + Sunday,data=data)$residuals^2)),
                color="#4CA7DE", linetype="dashed", size=1) +
     labs(
       x = "Models",
@@ -126,8 +128,6 @@ result <- data.table(
 
 
 
-
-
 # RERUN FULL MODEL WITH PCA DATA
   
   # Need to include squared terms
@@ -138,7 +138,7 @@ result <- data.table(
   # Including all adjustments
   lm_pca_full <- lm(cnt ~ lagged_cnt + yr + mnth + sq_mnth + hr + sq_hr + holiday + workingday +
                   Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
-                  Friday + Saturday + weathersit + temp + sq_temp + atemp + hum + windspeed + (mnth*temp),
+                  Friday + Saturday + Sunday + weathersit + temp + sq_temp + atemp + hum + windspeed + (mnth*temp),
                 data = data_PC18)
   residuals <- lm_pca_full$residuals
   empirical_loss_pca_full <- sum(residuals^2)
@@ -160,8 +160,36 @@ result <- data.table(
   )
   
   
-  
 
+  
+  
+# CROSS-VALIDATION
+  
+  # Function that splits "data" into K Folds 
+  
+  split_K <- function(data, folds){
+    data$id <- ceiling(sample(1:nrow(data), replace = FALSE, nrow(data)) / # Create an id variable
+                         (nrow(data) / folds))         # which randomly assigns each row to a fold 
+    return(data)
+  }
+  
+  # Randomly assign data points to K folds
+  dt_training <- split_K(data_training, K)
+  
+  # Train object for the caret package specifies method and number of runs
+  
+  train_control <- trainControl(method = "cv", number = 5)
+  
+  lm_caret <- train(
+    cnt  ~ .,
+    data = dt_training[,-"id"],
+    method = "lm",
+    trControl = train_control)
+  summary(lm_caret)
+  
+  lm_caret$results  
+    
+# END
 
 
 

@@ -12,6 +12,8 @@ library(tensorflow)
 library(reticulate)
 library(tidyverse)
 library(tidymodels)
+library(caret)
+library(neuralnet)
 
 
 
@@ -25,7 +27,7 @@ train_labels <- data_training %>% select(cnt)  # dependent (label)
 test_features <- data_test %>% select(-cnt)
 test_labels <- data_test %>% select(cnt)
 
-# Normalize to aviod scale issues
+# Normalize to aviod scale issues first on train and then test dataset
 normalizer <- layer_normalization(axis = -1)  # -1 so all features are normalized independently
 
 normalizer %>% adapt(as.matrix(train_features)) # apply layer on feature space
@@ -225,11 +227,11 @@ training_histories <- list()
 # 2. Loop through each learning rate and train the model
 for (lr in learning_rate) {
   # Create the model with the specified learning rate
-  dnn_temp_model <- build_and_compile_model(temp_normalizer, lr)
+  dnn_var_model <- build_and_compile_model(temp_normalizer, lr)
   
   # Train the model with training data
-  history <- dnn_temp_model %>% fit(
-    as.matrix(train_features$temp),
+  history <- dnn_var_model %>% fit(
+    as.matrix(train_features$temp),    # only temp as example input to reduce computation
     as.matrix(train_labels),
     validation_split = 0.2,
     verbose = 0,
@@ -348,6 +350,56 @@ sapply(test_results, function(x) x)
 
 
 
+# CROSS-VALIDATION
+
+train_control <- trainControl(method = "cv", number = 5)
+
+dnn_caret <- train(
+  cnt  ~ .,
+  data = dt_training[,-"id"],
+  method = "neuralnet",
+  layer1= 16, layer2=16,layer3=16,
+  trControl = train_control)
+
+summary(dnn_caret)
+
+dnn_caret$results
+
+# CROSS-VALIDATION BY LOOP
+
+# K-fold Cross Validation
+K <- 5
+
+# Collect MSE across folds
+dt_results <- data.table(fold=numeric(K), mse_cv=numeric(K))
+
+# Randomly assign data points to K folds
+dt_training <- split_K(data_training, K)
+
+### Alternative standardization to keras layer_normalization:
+
+# Normalize the features using standardization (z-score normalization)
+
+for (i in 1:K) {
+  # Extract the validation data for the current fold
+  validation_fold <- dt_training[id == i, ]
+  validation_features <- validation_fold %>% select(-cnt)
+  validation_labels <- validation_fold$cnt
+  
+  # Normalize the features using standardization (z-score normalization)
+  validation_features <- scale(as.matrix(validation_features))
+  
+  # Calculate the MSE on the validation fold using the pre-trained model
+  mse_cv <- mean((validation_labels - predict(dnn_model, validation_features))^2)
+  
+  # Store the MSE and fold number in the results data.table
+  dt_results$mse_cv[i] <- mse_cv
+  dt_results$fold[i] <- i
+}
+
+dt_results <- rbindlist(results)
+dt_results[,  mean(mse_cv), by="rep"]
+
 ### END
 
 
@@ -380,6 +432,24 @@ sapply(test_results, function(x) x)
 
 
 # Notes
+# Preprocessing with keras doesnt work inthe loop:
+for (i in 1:K) {
+  # Preprocessing goes here!
+
+  train_validation_features <- dt_training %>% select(-cnt)
+  train_validation_labels <- dt_training %>% select(cnt)
+  
+  dt_validation_scaled <- layer_normalization(axis = -1)  # -1 so all features are normalized independently
+  dt_validation_scaled %>% adapt(as.matrix(train_validation_features[id != i,])) # apply layer on feature sp
+  
+  # CV Error
+  dt_results$mse_cv[i] <- mean((train_validation_labels -
+                                  predict(dnn_model, newdata = train_validation_features))^2)
+  dt_results$fold[i] <- i
+}
+
+# Does not work as tensorflow does not allow the normalization per loop
+
 # Just for practice predict outcome when temp is 0.28 and hum 0.81
 
 new_data <- data.frame(temp = 0.28, hum = 0.81)
