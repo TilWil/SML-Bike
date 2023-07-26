@@ -34,7 +34,7 @@ data$season <- factor(data$season, levels = 1:4, labels = c("Spring", "Summer", 
 
 # Convert "weekday" to a factor with custom labels and relevel the factor to start from Monday (1)
 data$weekday <- factor(data$weekday, levels = 0:6, labels = c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"))
-data$weekday <- relevel(data$weekday, ref = "Monday")
+# data$weekday <- relevel(data$weekday, ref = "Monday")
 
 # Create dummy variables for "season" and "weekday"
 season_dummies <- model.matrix(~ season - 1, data = data)
@@ -46,8 +46,10 @@ colnames(season_dummies) <- levels(data$season)
 colnames(weekday_dummies) <- levels(data$weekday)
 
 
-# Combine the dummy variables and remove the original variables
+# Combine the dummy variables 
 data <- cbind(data, season_dummies, weekday_dummies)
+
+# Remove the original variables
 data <- data[, !"season", with = FALSE]
 data <- data[, !"weekday", with = FALSE]
 data <- data[, !"instant", with = FALSE]
@@ -56,8 +58,9 @@ data <- data[, !"casual", with = FALSE]     # sub-measures of the label "cnt"
 
 
 
+
 # Convert all variables to numeric using lapply and as.numeric
-data[] <- lapply(data, as.numeric)
+# data[] <- lapply(data, as.numeric)
 
 # Create Test and Training dataset (80% of data) and test dataset (20% of data)
 training_sample <- data[,sample(.N, floor(.N*.80))]
