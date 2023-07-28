@@ -15,6 +15,12 @@ library(tidymodels)
 library(caret)
 library(neuralnet)
 
+# in case python doesnt run
+library(reticulate)  # Just in case layer_norm function doesnt run
+use_condaenv("r-reticulate", required = TRUE)
+library(tensorflow)
+
+
 
 # PREPARING THE DATA
 
@@ -22,179 +28,103 @@ library(neuralnet)
   train_features <- data_training %>% select(-cnt) 
   train_labels <- data_training %>% select(cnt)  # dependent (label)
   
-  test_features <- data_test %>% select(-cnt)
+  train_features_norm <- data_training_norm %>% select(-cnt) 
+  train_labels_norm <- data_training_norm %>% select(cnt)  # dependent (label)
+  
+  test_features <- data_test %>% select(-cnt)  # Normalized as it will be used on the cv performance check
   test_labels <- data_test %>% select(cnt)
+  
+  test_features_norm <- data_test_norm %>% select(-cnt)  # Normalized as it will be used on the cv performance check
+  test_labels_norm <- data_test_norm %>% select(cnt)
 
-# Normalize to avoid scale issues first on train and then test dataset
-  normalizer <- layer_normalization(axis = -1)  # -1 so all features are normalized independently
+# Normalize to avoid scale issues first on train and then temp-sub dataset
+  normalizer <- layer_normalization()  
   
-  normalizer %>% adapt(as.matrix(train_features)) # apply layer on feature space
+  normalizer %>% adapt(as.matrix(train_features)) 
   
-  test_normalizer <- layer_normalization(axis = -1)
+  temp_normalizer <- layer_normalization() # set normalization layer
+  temp_normalizer %>% adapt(temp)  # adapt feature matrix to layer
   
-  test_normalizer %>% adapt(as.matrix(test_features))
-  
-  ####################### INTERMEDIATE STEPS FOR UNDERSTANDING##################
-  
-  # ONE FEAUTURE LINEAR REGRESSION WITH KERAS
-  
-    # First create normalized feature matrix
-    temp <- matrix(train_features$temp)  # create matrix
-    temp_normalizer <- layer_normalization(input_shape = shape(1), axis = NULL) # set normalization layer
-    temp_normalizer %>% adapt(temp)  # adapt feature matrix to layer
-    
-    # setting up temp one layer model
-    temp_model <- keras_model_sequential() %>%
-      temp_normalizer() %>%
-      layer_dense(units = 1)
-    
-    summary(temp_model)
-    
-    # Predict the first 30 temp values with the untrained model
-    predict(temp_model, temp[1:30,])
-    
-    # so far no optimization at place - set model with mean_squared_error
-    temp_model %>% compile(
-      optimizer = optimizer_adam(learning_rate = 0.1),
-      loss = 'mean_squared_error'
-    )
-    
-    # Keras fit() function will now estimate 50 epochs
-    history <- temp_model %>% fit(
-      as.matrix(train_features$temp),
-      as.matrix(train_labels),
-      epochs = 50,
-      # Suppress logging.
-      verbose = 0,
-      # Calculate validation results on 20% of the training data.
-      validation_split = 0.2
-    )
-    
-    plot(history)
-    
-    # Now as only two-dimensional model we can plot the results
-    x <- seq(0, 1, length.out = 1.01)
-    y <- predict(temp_model, x)
-    
-    ggplot(data) +
-      geom_point(aes(x = temp, y = cnt, color = "data")) +
-      geom_line(data = data.frame(x, y), aes(x = x, y = y, color = "prediction"))
-  
-    test_results <- list()
-    test_results[["temp_model"]] <- temp_model %>% evaluate(
-      as.matrix(test_features$temp),
-      as.matrix(test_labels),
-      verbose = 0
-    )
-  
-  # MULTI FEATURE LINEAR REGRESSION
-    linear_model <- keras_model_sequential() %>%
-      normalizer() %>%
-      layer_dense(units = 1)
-    
-    predict(linear_model, as.matrix(train_features[1:10, ]))
-    
-    linear_model %>% compile(
-      optimizer = optimizer_adam(learning_rate = 0.1),
-      loss = 'mean_squared_error'
-    )
-    
-    # Similar to above only with whole feature-space
-    history <- linear_model %>% fit(
-      as.matrix(train_features),
-      as.matrix(train_labels),
-      epochs = 50,
-      # Suppress logging.
-      verbose = 0,
-      # Calculate validation results on 20% of the training data.
-      validation_split = 0.2
-    )
-    
-    # Plot loss history
-    plot(history)
-    
-    # Collect results on test data
-    test_results[['linear_model']] <- linear_model %>%
-      evaluate(
-        as.matrix(test_features),
-        as.matrix(test_labels),
-        verbose = 0
-      )
-
-
+ 
 ############################## DEEP NEURAL NETWORKS#############################
-  # 1. Single feature input model
+  # 1. Visualize Deep Neural Network
   # 2. Multi feature input model (MAIN MODEL)
   # 3. Varying learning rate over single feature input model
   # 4. Re-run model on PCA Data
 
-# Setting up the model
+
+
+    
+        ########################### MAIN MODEL ##############################
+  
+# 1. Visualize with neuralnet function
+  # First define Neural Network
+  dnn_viz <- neuralnet(cnt ~ yr+mnth+hr+holiday+weathersit+temp+atemp+hum+windspeed
+                       +lagged_cnt+Spring+Summer+Fall+Winter+Sunday+Monday+Tuesday+
+                         Wednesday+Thursday+Friday+Saturday,
+                       data = data_training,
+                       hidden=c(16,16), # neurons in the hidden layers
+                       learningrate= 0.1,
+                       algorithm = "backprop",
+                       act.fct = "logistic",
+                       err.fct = "sse",   # sum of squared error as error function
+                       linear.output = FALSE,
+                       lifesign = "full", # Print outputs while running
+                       rep=1)  # needs to be one for visualization otherwise prints all reps.
+  # Then plot
+  plot(dnn_viz, fill="green", col.hidden.synapse="lightblue",
+       show.weights=FALSE,
+       information=FALSE)
+  
+  # 2. Setting up the model with Keras
   build_and_compile_model <- function(norm) {
     model <- keras_model_sequential() %>%
       norm() %>%
-      layer_dense(16, activation = 'relu') %>% # DNN with 3 layers 
-      layer_dense(16, activation = 'relu') %>% # and width of 16 neurons
-      layer_dense(16, activation = 'relu') %>%
+      layer_dense(16, activation = 'sigmoid') %>% # DNN with 3 layers 
+      layer_dense(16, activation = 'sigmoid') %>% # and width of 16 neurons
+      layer_dense(16, activation = 'sigmoid') %>%
       layer_dense(1)
     
     model %>% compile(
-      loss = 'mean_absolute_error',           # Attention: absolute loss here (alt. squared)
+      loss = 'mean_squared_error',           # Attention: absolute loss here (alt. squared)
+      metrics = "mae",              # Absolute error her also interesting: accuracy (Calculates how often predictions equal labels) 
       optimizer = optimizer_adam(0.001)         # Learning rate of the GD
     )
     
     model
   }
-
-# 1. SINGLE INPUT DEEP NEURAL NETWORK
-  dnn_temp_model <- build_and_compile_model(temp_normalizer)
-  
-  summary(dnn_temp_model)
-  
-  history <- dnn_temp_model %>% fit(
-    as.matrix(train_features$temp),
-    as.matrix(train_labels),
-    validation_split = 0.2,
-    verbose = 0,
-    epochs = 100    # 50 epochs doesnt require that much computation and sufficient to bottom out loss
-  )
-  
-  plot(history)
-  
-  # As its only 2-D it's easy to plot the prediction
-  x <- seq(0.0, 1, length.out = 1.01)
-  y <- predict(dnn_temp_model, x)
-  
-  ggplot(data) +
-    geom_point(aes(x = temp, y = cnt, color = "data")) +
-    geom_line(data = data.frame(x, y), aes(x = x, y = y, color = "prediction"))
-  
-  # Collect results on test data
-  test_results[['dnn_temp_model']] <- dnn_temp_model %>% evaluate(
-    as.matrix(test_features$temp),
-    as.matrix(test_labels),
-    verbose = 0
-  )
-    
-        ########################### MAIN MODEL ##############################
-  
-# 2. MULTI INPUT DEEP NEURAL NETWORK
+  # Use the compiled model from above
   dnn_model <- build_and_compile_model(normalizer)   # store new model with same model-set up 
-                                                     # but other Input Matrix
+  #summary(dnn_model)                                             
+  
+  # Fitting the model
   dnn_history <- dnn_model %>% fit(        # Run model with fit command
     as.matrix(train_features),
     as.matrix(train_labels),
-    validation_split = 0.2,
+    #validation_split = 0.2,
     verbose = 0,
     epochs = 100
   )
   
   plot(dnn_history)
   
+  test_results <- list()
+  
+  
   test_results[['dnn_model']] <- dnn_model %>% evaluate(
     as.matrix(test_features),
     as.matrix(test_labels),
-    verbose = 0
-  )
+    verbose = 0)
+  
+  # On normalized test
+  test_results[['dnn_model_norm']] <- dnn_model %>% evaluate(
+    as.matrix(test_features_norm),
+    as.matrix(test_labels_norm),
+    verbose = 0)
+  
+  # Store Model
+  save_model_tf(dnn_model, 'dnn_model')
+  
 
             ###########################################################  
   
@@ -213,13 +143,12 @@ library(neuralnet)
   build_and_compile_model <- function(norm, learning_rate) {
     model <- keras_model_sequential() %>%
       norm() %>%
-      layer_dense(16, activation = 'relu') %>%
-      layer_dense(16, activation = 'relu') %>%
-      layer_dense(16, activation = 'relu') %>%
+      layer_dense(16, activation = 'sigmoid') %>%
+      layer_dense(16, activation = 'sigmoid') %>%
       layer_dense(1)
     
     model %>% compile(
-      loss = 'mean_absolute_error',
+      loss = 'mean_squared_error',
       optimizer = optimizer_adam(learning_rate) # Set the learning rate here
     )
     
@@ -254,243 +183,189 @@ library(neuralnet)
 # 3.3 Plot all the training and validation losses together
 
 # Save the plot as a PDF file
-pdf("training_rates_plots.pdf")
-
-  par(mfrow = c(1, length(learning_rate)))  # Plotting layout - arranges 3 plots side by side
-  for (i in seq_along(learning_rate)) {
-    lr <- learning_rate[i]
-    history <- training_histories[[as.character(lr)]]
-    
-    plot(history$metrics$loss, type = "l", col = "blue", main = paste("Learning Rate =", lr))
-    lines(history$metrics$val_loss, col = "red")
-    legend("topright", c("Training Loss", "Validation Loss"), col = c("blue", "red"), lty = 1)
-  }
-  par(mfrow = c(1, 1))  # Reset the plotting layout to default
+  pdf("training_rates_plots.pdf")
+  
+    par(mfrow = c(1, length(learning_rate)))  # Plotting layout - arranges 3 plots side by side
+    for (i in seq_along(learning_rate)) {
+      lr <- learning_rate[i]
+      history <- training_histories[[as.character(lr)]]
+      
+      plot(history$metrics$loss, type = "l", col = "blue", main = paste("Learning Rate =", lr))
+      lines(history$metrics$val_loss, col = "red")
+      legend("topright", c("Training Loss", "Validation Loss"), col = c("blue", "red"), lty = 1)
+    }
+    par(mfrow = c(1, 1))  # Reset the plotting layout to default
 
 # close pdf file
 dev.off()
 
 
 # 4. RERUN MODEL on PCA dimensionality reduced data
-  pca_training_sample <- data_PC18[,sample(.N, floor(.N*.80))]
-  pca_data_training <- data_PC18[pca_training_sample]
-  pca_data_test <- data_PC18[-pca_training_sample]
+  # pca_training_sample <- data_PC18[,sample(.N, floor(.N*.80))]
+  # pca_data_training <- data_PC18[pca_training_sample]
+  # pca_data_test <- data_PC18[-pca_training_sample]
   
-  pca_train_features <- pca_data_training %>% select(-cnt)
-  pca_train_labels <- pca_data_training %>% select(cnt)
+  pca_train_features <- data_PC18 %>% select(-cnt)
+  pca_train_labels <- data_PC18 %>% select(cnt)
   
-  pca_test_features <- pca_data_test %>% select(-cnt)
-  pca_test_labels <- pca_data_test %>% select(cnt)
+  # pca_test_features <- pca_data_test %>% select(-cnt)
+  # pca_test_labels <- pca_data_test %>% select(cnt)
 
 # Same procedure with other data and no normalization layer as pca data already scaled
-  build_and_compile_model <- function(norm) {
+  build_and_compile_model_pca <- function(norm) {
     model <- keras_model_sequential() %>%
-      layer_dense(16, activation = 'relu') %>% # DNN with 3 layers 
-      layer_dense(16, activation = 'relu') %>% # and width of 16 neurons
-      layer_dense(16, activation = 'relu') %>%
+      layer_dense(16, activation = 'sigmoid') %>% # DNN with 3 layers 
+      layer_dense(16, activation = 'sigmoid') %>% # and width of 16 neurons
       layer_dense(1)
     
     model %>% compile(
-      loss = 'mean_absolute_error',           # Attention: absolute loss here (alt. squared)
+      loss = 'mean_squared_error',           # Attention: absolute loss here (alt. squared)
+      metrics = "mae",
       optimizer = optimizer_adam(0.001)         # Learning rate of the GD
     )
     
     model
   }
   
-  dnn_pca_model <- build_and_compile_model()   # store new model with same model-set up 
+  dnn_pca_model <- build_and_compile_model_pca()   # store new model with same model-set up 
   # but other Input Matrix
   pca_history <- dnn_pca_model %>% fit(        # Run model with fit command
     as.matrix(pca_train_features),
     as.matrix(pca_train_labels),
-    validation_split = 0.2,
+    # validation_split = 0.2,
     verbose = 0,
-    epochs = 100
-  )
+    epochs = 100)
+  
+  
+  # Store Model
+  save_model_tf(dnn_pca_model, 'dnn_pca_model')
 
 # Compare loss reduction
-  par(mfrow = c(1, 2))  # Plotting layout - arranges 3 plots side by side
-  
   plot(pca_history)
   plot(dnn_history)
-  par(mfrow = c(1, 1))  # Plotting layout - arranges 3 plots side by side
-  
+
   test_results[['dnn_pca_model']] <- dnn_pca_model %>% evaluate(
-    as.matrix(pca_test_features),
-    as.matrix(pca_test_labels),
+    as.matrix(test_features),
+    as.matrix(test_labels),
     verbose = 0
   )
 
 
-########################### VALIDATION AND PERFORMANCE ########################  
+     ########################### CROSS-VALIDATION ########################  
 
+  # OPTION 1: Using Keras Validation Split function
+  dnn_cv_model <- build_and_compile_model(normalizer)   # store new model with same model-set up 
+  
+  # Fitting the model
+  dnn_cv_history <- dnn_cv_model %>% fit(        # Run model with fit command
+    as.matrix(train_features),
+    as.matrix(train_labels),
+    validation_split = 0.2,
+    shuffle = TRUE,  # If true training data is re-shuffeld before each epoch
+    verbose = 0,
+    epochs = 100
+  )
+  
+  plot(dnn_cv_history)
+  
+  test_results[['dnn_cv_model']] <- dnn_cv_model %>% evaluate(
+    as.matrix(test_features),
+    as.matrix(test_labels),
+    verbose = 0)
+  
+  save_model_tf(dnn_cv_model, 'dnn_cv_model')
+  
 
+# OPTION 2: CROSS-VALIDATION BY LOOP 
+
+    # K-fold Cross Validation
+    K <- 5
+  
+  # Collect MSE across folds
+    dt_cv_results <- data.table(fold=numeric(K), mse_cv=numeric(K), residuals=numeric(K))
+  
+  # Randomly assign data points to K folds
+    split_K <- function(data, folds){
+      data$id <- ceiling(sample(1:nrow(data), replace = FALSE, nrow(data)) / # Create an id variable
+                           (nrow(data) / folds))         # which randomly assigns each row to a fold 
+      return(data)
+    }
+    # Randomly assign data points to K folds
+    dt_training <- split_K(data_training, K)
+    
+    for (i in 1:K) {
+    # Preprocessing goes here!
+    dt_training_scaled <- data.table(scale(dt_training[id != i,]))
+    dt_validation_scaled <- data.table(scale(dt_training[id == i,]))
+    
+    # define features and labels
+    train_labels <- dt_training_scaled$cnt
+    train_features <- dt_training_scaled[, -"cnt"]
+    
+    validation_features <- dt_validation_scaled[, -"cnt"]
+    validation_labels <- dt_validation_scaled$cnt
+  
+    # Trains the model with new training data each round
+    dnn_cv_model2 <- neuralnet(cnt ~ yr+mnth+hr+holiday+weathersit+temp+atemp+hum+windspeed+
+                               lagged_cnt+Spring+Summer+Fall+Winter+Sunday+Monday+Tuesday+
+                               Wednesday+Thursday+Friday+Saturday,
+                               data = dt_training_scaled,
+                               hidden=c(16,16,16), # neurons in the hidden layers
+                               learningrate= 0.05,
+                               algorithm = "backprop",
+                               act.fct = "logistic",
+                               err.fct = "sse",   # sum of squared error as error function
+                               linear.output = FALSE,
+                               lifesign = "full", # Print outputs while running
+                               rep=100)  # needs to be one for visualization otherwise prints all reps.
+    
+  # Calculates the MSE on the validation fold using the trained model
+    test_predictions <- predict(dnn_cv_model2, as.matrix(validation_features)) # Error from predict - only NA's
+    mse_cv <- mean((validation_labels - test_predictions)^2) # dnn_cv_model
+    
+   #dt_results$mse_cv[i] <- mean((validation_labels - predict(dnn_cv_model, validation_features))^2)
+
+  # Stores the MSE and fold number in the results data.table
+    dt_cv_results$mse_cv[i] <- mse_cv
+    dt_cv_results$fold[i] <- i
+  }
+    plot(cv_history)
+    show(dt_cv_results)
+    
+    
+  # Option 3: CV within Keras and scikit-learn KFold function but scikit-learn doesnt run
+  # Option 4: Caret package build in neuralnet function - but computation >30min so option dropped
+
+    
+    
 # PERFORMANCE
 
   # All results of models trained on the test data stored under "test_results"
     sapply(test_results, function(x) x)
-  
-  # Just create handpicked values for 24 features and predict cnt outcome based on model
-    random_prediction <- matrix(c(0,6,14,0,1,2,0.30, 0.28, 0.66, 0.32, 340, 0,1,0,0,0,0,0,1,0,0,0))
-    random_prediction <- t(random_prediction) # transpose column into matrix
-  
-  
-  # PREDICTION ON TEST DATA
-    test_predictions <- predict(dnn_model, as.matrix(test_features))
-    test_predictions2 <- predict(dnn_model, as.matrix(random_prediction))
-  
-    summary(test_predictions2)  
-  
-  # Plot prediction 
-  ggplot(data.frame(pred = as.numeric(test_predictions), cnt = test_labels$cnt)) +
-    geom_point(aes(x = pred, y = cnt)) +
-    geom_abline(intercept = 0, slope = 1, color = "blue")
-  
-  # Error distribution 
-  qplot(test_predictions - test_labels$cnt, geom = "density")
-  
-  
-  # Store Model
-  save_model_tf(dnn_model, 'dnn_model')
 
-
-# CROSS-VALIDATION
-
-  train_control <- trainControl(method = "cv", number = 5)
   
-  dnn_caret <- train(
-    cnt  ~ .,
-    data = dt_training[,-"id"],
-    method = "neuralnet",
-    layer1= 16, layer2=16,layer3=16,
-    trControl = train_control)
-  
-  summary(dnn_caret)
-  
-  dnn_caret$results
-
-# CROSS-VALIDATION BY LOOP (doesnt work yet)
-
-  # K-fold Cross Validation
-    K <- 5
-  
-  # Collect MSE across folds
-    dt_cv_results <- data.table(fold=numeric(K), mse_cv=numeric(K))
-  
-  # Randomly assign data points to K folds
-    dt_training <- split_K(data_training, K)
+  # Expected loss 
+    #  Model dnn
+    dnn_test_predictions <- predict(dnn_model, as.matrix(test_features))
+    Expected_loss_dnn <- mean((as.matrix(test_labels) - dnn_test_predictions)^2)
     
-  # Set up model without normalization layer
-    build_and_compile_model <- function(norm) {
-      model <- keras_model_sequential() %>%
-        layer_dense(16, activation = 'relu') %>% # DNN with 3 layers 
-        layer_dense(16, activation = 'relu') %>% # and width of 16 neurons
-        layer_dense(16, activation = 'relu') %>%
-        layer_dense(1)
-      
-      model %>% compile(
-        loss = 'mean_absolute_error',           # Attention: absolute loss here (alt. squared)
-        optimizer = optimizer_adam(0.1)         # Learning rate of the GD
-      )
-      
-      model
-    }
-  
-  ### Alternative standardization to keras layer_normalization:
+    #  Model dnn_cv
+    dnn_cv_test_predictions <- predict(dnn_cv_model, as.matrix(test_features))
+    Expected_loss_dnn_cv <- mean((as.matrix(test_labels) - dnn_cv_test_predictions)^2)
     
-    # Creates and train the model for this fold
-    dnn_cv_model <- build_and_compile_model()
+    #  Model dnn_pca on non-normalized test data
+    dnn_pca_test_predictions <- predict(dnn_pca_model, as.matrix(test_features))
+    Expected_loss_dnn_pca <- mean((as.matrix(test_labels) - dnn_pca_test_predictions)^2)
     
-  # Normalizes the features using standardization (z-score normalization)
-for (i in 1:K) {
-  # Extracts the training and validation data for the current fold
-  training_fold <- dt_training[dt_training$id != i, ]
-  validation_fold <- dt_training[dt_training$id == i, ]
+    # Expected loss of pca model in pca space - not same test data as other models but unseen from model
+    dnn_pca_test_predictions2 <- predict(dnn_pca_model, as.matrix(pca_test_features))
+    Expected_loss_dnn_pca_on_pca <- mean((as.matrix(pca_test_labels) - dnn_pca_test_predictions2)^2) 
   
-  # Normalizes the features using standardization (z-score normalization)
-  train_features <- scale(training_fold[, -"cnt"])
-  train_labels <- training_fold$cnt
-  validation_features <- scale(validation_fold[, -"cnt"])
-  validation_labels <- validation_fold$cnt
+    # CV Model 2
+    Expected_loss_dnn_cv2 <- mean(as.matrix((test_labels_norm - predict(dnn_cv_model2, test_features_norm))^2))
+    
+    # CV Model 2 no scale
+    Expected_loss_dnn_cv2_no_scale <- mean(as.matrix((test_labels_norm - predict(dnn_cv_model2_no_scale, test_features_norm))^2))
 
-  # Trains the model with training data
-  cv_history <- dnn_cv_model %>% fit(
-    as.matrix(train_features),    # only temp as example input to reduce computation
-    as.matrix(train_labels),
-    verbose = 0,
-    epochs = 10
-  )
-  
-  # Calculates the MSE on the validation fold using the trained model
-  mse_cv <- mean((validation_labels - predict(dnn_cv_model, as.matrix(validation_features)))^2)
-  
-  # Stores the MSE and fold number in the results data.table
-  dt_cv_results$mse_cv[i] <- mse_cv
-  dt_cv_results$fold[i] <- i
-}
-    dt_cv_results[,  mean(mse_cv), by="fold"]
-    
-     summary(dt_cv_results)
-    dt_cv_results    
-     
 ### END 
-
-    #TODO - maybe like this?
-    
-    # K-fold Cross Validation
-    K <- 5
-    
-    # Collect MSE across folds
-    dt_results <- data.table(fold=numeric(K), mse_cv=numeric(K))
-    
-    # Randomly assign data points to K folds
-    dt_training <- split_K(dt_training, K)
-    
-    for (i in 1:K) {
-      # Preprocessing goes here!
-      dt_training_scaled <- data.table(scale(dt_training[id != i,]))
-      dt_validation_scaled <- data.table(scale(dt_training[id == i,]))
-      
-      # Modelling 
-       dnn_cv_model <- build_and_compile_model()
-  
-  # Trains the model with training data
-  cv_history <- dnn_cv_model %>% fit(
-    as.matrix(train_features),    # only temp as example input to reduce computation
-    as.matrix(train_labels),
-    verbose = 0,
-    epochs = 10
-  )
-      
-      # CV Error
-      dt_results$mse_cv[i] <- mean((dt_validation_scaled[, RetailPrice]-
-                                      predict(dnn_cv_model, newdata = dt_validation_scaled))^2)
-      dt_results$fold[i] <- i
-    }
-    
-    
-    
-    
-    
-     
-    
-# Validating main DNN model on different folds (but not retraining on each)
-  for (i in 1:K) {
-    # Extract the validation data for the current fold
-    validation_fold <- dt_training[id == i, ]
-    validation_features <- validation_fold %>% select(-cnt)
-    validation_labels <- validation_fold$cnt
-    
-    # Normalize the features using standardization (z-score normalization)
-    validation_features <- scale(as.matrix(validation_features))
-    
-    # Calculate the MSE on the validation fold using the pre-trained model
-    mse_cv <- mean((validation_labels - predict(dnn_model, validation_features))^2)
-    
-    # Store the MSE and fold number in the results data.table
-    dt_results$mse_cv[i] <- mse_cv
-    dt_results$fold[i] <- i
-  }
-  
-    dt_results <- rbindlist(results)
-    dt_results[,  mean(mse_cv), by="rep"]
+ 
