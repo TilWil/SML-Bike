@@ -17,8 +17,11 @@ install.packages("tidymodels")
 install.packages("ada")
 install.packages("caret")
 install.packages("neuralet")
-
-
+install.packages("rstudioapi")
+install.packages("rpart")
+install.packages("rpart.plot")
+install.packages("randomForest")
+install.packages("gbm")
 
 # To install tensorflow do either:
 library(reticulate)
