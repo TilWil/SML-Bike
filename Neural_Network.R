@@ -31,10 +31,10 @@ library(tensorflow)
   train_features_norm <- data_training_norm %>% select(-cnt) 
   train_labels_norm <- data_training_norm %>% select(cnt)  # dependent (label)
   
-  test_features <- data_test %>% select(-cnt)  # Normalized as it will be used on the cv performance check
+  test_features <- data_test %>% select(-cnt) 
   test_labels <- data_test %>% select(cnt)
   
-  test_features_norm <- data_test_norm %>% select(-cnt)  # Normalized as it will be used on the cv performance check
+  test_features_norm <- data_test_norm %>% select(-cnt)  
   test_labels_norm <- data_test_norm %>% select(cnt)
 
 # Normalize to avoid scale issues first on train and then temp-sub dataset
@@ -42,6 +42,8 @@ library(tensorflow)
   
   normalizer %>% adapt(as.matrix(train_features)) 
   
+  # For Hyperparameter loop use simple feature space
+  temp <- matrix(train_features$temp)  # create matrix
   temp_normalizer <- layer_normalization() # set normalization layer
   temp_normalizer %>% adapt(temp)  # adapt feature matrix to layer
   
@@ -51,8 +53,6 @@ library(tensorflow)
   # 2. Multi feature input model (MAIN MODEL)
   # 3. Varying learning rate over single feature input model
   # 4. Re-run model on PCA Data
-
-
 
     
         ########################### MAIN MODEL ##############################
@@ -108,39 +108,26 @@ library(tensorflow)
   
   plot(dnn_history)
   
-  test_results <- list()
-  
-  
-  test_results[['dnn_model']] <- dnn_model %>% evaluate(
-    as.matrix(test_features),
-    as.matrix(test_labels),
-    verbose = 0)
-  
-  # On normalized test
-  test_results[['dnn_model_norm']] <- dnn_model %>% evaluate(
-    as.matrix(test_features_norm),
-    as.matrix(test_labels_norm),
-    verbose = 0)
   
   # Store Model
   save_model_tf(dnn_model, 'dnn_model')
   
 
-            ###########################################################  
+         ###################### Hyperparameter #############################  
   
 # 3. DEEP NEURAL NETWORK WITH VARYING LEARNING RATES
 
 # APPROACH:
   # To inspect on varying settings of the learning rate on model performance we set-up 
-  # a loop within the deep neural netweork is trained on the single "temp" input (to 
-  # reduce computation only "temp") 
+  # a loop within the deep neural network 
   # Therefore: 
   # 1. specify model with option of varying optimizer settings
   # 2. Loop different DNNs on the training data and saver results in "training_histories"
-  # 3. Plot results in "training_histories" with a little plot loop 
+  # 3. Plot results in "training_histories" with a little plot loop
+  # 4. Apply similar loop to number of epochs
 
-# 3.1 Function to build and compile the model with a given normalization and learning rate
-  build_and_compile_model <- function(norm, learning_rate) {
+  # 3.1 Function to build and compile the model with a given normalization and learning rate
+  build_and_compile_model_lr <- function(norm, learning_rate) {
     model <- keras_model_sequential() %>%
       norm() %>%
       layer_dense(16, activation = 'sigmoid') %>%
@@ -155,22 +142,22 @@ library(tensorflow)
     model
   }
 
-# List of learning rates 
+  # List of learning rates 
   learning_rate <- c(0.1, 0.01, 0.001)
 
-# List to store training histories
+  # List to store training histories
   training_histories <- list()
   
-# 3.2 Loop through each learning rate and train the model
+  # 3.2 Loop through each learning rate and train the model
   for (lr in learning_rate) {
     # Create the model with the specified learning rate
-    dnn_var_model <- build_and_compile_model(temp_normalizer, lr)
+    dnn_var_model <- build_and_compile_model_lr(normalizer, lr)
     
     # Train the model with training data
     history <- dnn_var_model %>% fit(
-      as.matrix(train_features$temp),    # only temp as example input to reduce computation
+      as.matrix(train_features),    # only temp as example input to reduce computation
       as.matrix(train_labels),
-      validation_split = 0.2,
+      #validation_split = 0.2,
       verbose = 0,
       epochs = 50
     )
@@ -180,13 +167,13 @@ library(tensorflow)
   }
 
 
-# 3.3 Plot all the training and validation losses together
+  # 3.3 Plot all the training and validation losses together
 
-# Save the plot as a PDF file
-  pdf("training_rates_plots.pdf")
+  # Save the plot as a PDF file
+    pdf("training_rates_plots.pdf")
   
     par(mfrow = c(1, length(learning_rate)))  # Plotting layout - arranges 3 plots side by side
-    for (i in seq_along(learning_rate)) {
+    for (i in seq_along(learning_rate)) {    # loop that plots model-histories according to learning rate
       lr <- learning_rate[i]
       history <- training_histories[[as.character(lr)]]
       
@@ -195,27 +182,63 @@ library(tensorflow)
       legend("topright", c("Training Loss", "Validation Loss"), col = c("blue", "red"), lty = 1)
     }
     par(mfrow = c(1, 1))  # Reset the plotting layout to default
+  
+  # close pdf file
+  dev.off()
 
-# close pdf file
-dev.off()
-
-
+  
+  # 4. Increasing number of epochs
+  epochs <- c(50, 100, 500)
+  
+  # store training histories
+  training_histories_ep <- list()
+  
+  # Loop through each epoch and train the model
+  for (ep in epochs) {
+    # Create the model with the specified learning rate
+    dnn_var_model <- build_and_compile_model(normalizer)
+    
+    # Train the model with training data
+    history <- dnn_var_model %>% fit(
+      as.matrix(train_features),    # Use appropriate training features
+      as.matrix(train_labels),
+      verbose = 0,
+      epochs = ep
+    )
+    
+    # Store the training history in the list
+    training_histories_ep[[as.character(ep)]] <- history
+  }
+  
+  # Save the plot as a PDF file
+  pdf("epochs1_plots.pdf")
+  
+  par(mfrow = c(1, length(epochs)))  # Plotting layout - arranges 3 plots side by side
+  for (i in seq_along(epochs)) {    # loop that plots model-histories according to learning rate
+    ep <- epochs[i]
+    history <- training_histories_ep[[as.character(ep)]]
+    
+    plot(history$metrics$loss, type = "l", col = "blue", main = paste("Learning Rate =", ep))
+    lines(history$metrics$val_loss, col = "red")
+    legend("topright", c("Training Loss", "Validation Loss"), col = c("blue", "red"), lty = 1)
+  }
+  par(mfrow = c(1, 1))  # Reset the plotting layout to default
+  
+  # close pdf file
+  dev.off()
+  
+  
 # 4. RERUN MODEL on PCA dimensionality reduced data
-  # pca_training_sample <- data_PC18[,sample(.N, floor(.N*.80))]
-  # pca_data_training <- data_PC18[pca_training_sample]
-  # pca_data_test <- data_PC18[-pca_training_sample]
+  pca_train_features <- feature_PC18 
+  pca_train_labels <- train_labels_norm
   
-  pca_train_features <- data_PC18 %>% select(-cnt)
-  pca_train_labels <- data_PC18 %>% select(cnt)
-  
-  # pca_test_features <- pca_data_test %>% select(-cnt)
-  # pca_test_labels <- pca_data_test %>% select(cnt)
 
 # Same procedure with other data and no normalization layer as pca data already scaled
   build_and_compile_model_pca <- function(norm) {
     model <- keras_model_sequential() %>%
       layer_dense(16, activation = 'sigmoid') %>% # DNN with 3 layers 
       layer_dense(16, activation = 'sigmoid') %>% # and width of 16 neurons
+      layer_dense(16, activation = 'sigmoid') %>% 
       layer_dense(1)
     
     model %>% compile(
@@ -244,12 +267,6 @@ dev.off()
   plot(pca_history)
   plot(dnn_history)
 
-  test_results[['dnn_pca_model']] <- dnn_pca_model %>% evaluate(
-    as.matrix(test_features),
-    as.matrix(test_labels),
-    verbose = 0
-  )
-
 
      ########################### CROSS-VALIDATION ########################  
 
@@ -263,17 +280,27 @@ dev.off()
     validation_split = 0.2,
     shuffle = TRUE,  # If true training data is re-shuffeld before each epoch
     verbose = 0,
-    epochs = 100
-  )
+    epochs = 100 )
   
   plot(dnn_cv_history)
   
-  test_results[['dnn_cv_model']] <- dnn_cv_model %>% evaluate(
-    as.matrix(test_features),
-    as.matrix(test_labels),
-    verbose = 0)
-  
   save_model_tf(dnn_cv_model, 'dnn_cv_model')
+  
+  # Same with PCA data
+  dnn_cv_pca_model <- build_and_compile_model_pca(normalizer)   # store new model with same model-set up 
+  
+  dnn_cv_pca_history <- dnn_cv_pca_model %>% fit(        # Run model with fit command
+    as.matrix(pca_train_features),
+    as.matrix(pca_train_labels),
+    validation_split = 0.2,
+    shuffle = TRUE,  # If true training data is re-shuffeld before each epoch
+    verbose = 0,
+    epochs = 100
+  )
+  
+  plot(dnn_cv_pca_history)
+  
+  save_model_tf(dnn_cv_model, 'dnn_cv_pca_model')
   
 
 # OPTION 2: CROSS-VALIDATION BY LOOP 
@@ -329,7 +356,6 @@ dev.off()
     dt_cv_results$mse_cv[i] <- mse_cv
     dt_cv_results$fold[i] <- i
   }
-    plot(cv_history)
     show(dt_cv_results)
     
     
@@ -339,9 +365,6 @@ dev.off()
     
     
 # PERFORMANCE
-
-  # All results of models trained on the test data stored under "test_results"
-    sapply(test_results, function(x) x)
 
   
   # Expected loss 
@@ -356,16 +379,9 @@ dev.off()
     #  Model dnn_pca on non-normalized test data
     dnn_pca_test_predictions <- predict(dnn_pca_model, as.matrix(test_features))
     Expected_loss_dnn_pca <- mean((as.matrix(test_labels) - dnn_pca_test_predictions)^2)
-    
-    # Expected loss of pca model in pca space - not same test data as other models but unseen from model
-    dnn_pca_test_predictions2 <- predict(dnn_pca_model, as.matrix(pca_test_features))
-    Expected_loss_dnn_pca_on_pca <- mean((as.matrix(pca_test_labels) - dnn_pca_test_predictions2)^2) 
   
     # CV Model 2
-    Expected_loss_dnn_cv2 <- mean(as.matrix((test_labels_norm - predict(dnn_cv_model2, test_features_norm))^2))
-    
-    # CV Model 2 no scale
-    Expected_loss_dnn_cv2_no_scale <- mean(as.matrix((test_labels_norm - predict(dnn_cv_model2_no_scale, test_features_norm))^2))
+    Expected_loss_dnn_cv2 <- mean(as.matrix((test_labels - predict(dnn_cv_model2, test_features))^2))
 
 ### END 
  

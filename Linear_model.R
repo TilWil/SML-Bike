@@ -11,7 +11,7 @@ library(caret)
   lm_basic <- lm(cnt ~ yr + mnth + hr + holiday  +
                  Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
                  Friday + Saturday + Sunday + weathersit + temp + atemp + hum + windspeed,
-                 data = data_training_norm)  # Normalized data for comparability to PCA reduced model
+                 data = data_training)  # Normalized data for comparability to PCA reduced model
   residuals <- lm_basic$residuals
   empirical_loss_basic <- sum(residuals^2)
   
@@ -20,7 +20,7 @@ library(caret)
                   weathersit + temp + atemp + hum + windspeed + 
                   Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
                   Friday + Saturday + Sunday,
-                  data = data_training_norm) 
+                  data = data_training) 
   residuals <- lm_lagged$residuals
   empirical_loss_lagged <- sum(residuals^2)
   
@@ -28,7 +28,7 @@ library(caret)
   lm_sq <- lm(cnt ~ lagged_cnt + yr + mnth + I(mnth^2) + hr + I(hr^2) + holiday + 
                  Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
                  Friday + Saturday + Sunday  + weathersit + temp + I(temp^2) + atemp + 
-                 hum + windspeed,data = data_training_norm)
+                 hum + windspeed,data = data_training)
   summary(lm_sq)
   residuals <- lm_sq$residuals
   empirical_loss_sq <- sum(residuals^2)
@@ -38,7 +38,7 @@ library(caret)
                   weathersit + temp + atemp + hum + windspeed + 
                   Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
                   Friday + Saturday + Sunday +
-                  (mnth*temp),data = data_training_norm) 
+                  (mnth*temp),data = data_training) 
   residuals <- lm_interaction$residuals
   empirical_loss_interaction <- sum(residuals^2)
   
@@ -46,10 +46,15 @@ library(caret)
   lm_full <- lm(cnt ~ lagged_cnt + yr + mnth + I(mnth^2) + hr + I(hr^2) + holiday  +
                   Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
                   Friday + Saturday + Sunday + weathersit + temp + I(temp^2) + atemp + hum + windspeed + (mnth*temp),
-                  data = data_training_norm)
+                  data = data_training)
   residuals <- lm_full$residuals
   empirical_loss_full <- sum(residuals^2)
-
+  
+  # Train same model on normalized data
+  lm_full_norm <- lm(cnt ~ lagged_cnt + yr + mnth + I(mnth^2) + hr + I(hr^2) + holiday  +
+                  Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
+                  Friday + Saturday + Sunday + weathersit + temp + I(temp^2) + atemp + hum + windspeed + (mnth*temp),
+                data = data_training_norm)
 
   
   stargazer(lm_basic, lm_lagged, lm_interaction, lm_full, type = "text", style = "aer")
@@ -61,10 +66,10 @@ library(caret)
 # RERUN FULL MODEL WITH PCA DATA
   
   # Including all adjustments
-  lm_pca_full <- lm(cnt ~ lagged_cnt + yr + mnth + I(mnth^2) + hr + I(hr^2) + holiday  +
+  lm_pca_full <- lm(data_training$cnt ~ lagged_cnt + yr + mnth + I(mnth^2) + hr + I(hr^2) + holiday  +
                   Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
                   Friday + Saturday + Sunday + weathersit + temp + I(temp^2) + atemp + hum + windspeed + (mnth*temp),
-                data = data_PC18)
+                data = feature_PC18)
   residuals <- lm_pca_full$residuals
   empirical_loss_pca_full <- sum(residuals^2)
   
@@ -86,10 +91,9 @@ library(caret)
   show(Empirical_loss)
   
 # CROSS-VALIDATION
-  
+  # (does not make much sense for the linear model, as overfitting no big issue here)
 
   # Train object for the caret package specifies method and number of runs
-  
   
   train_control <- trainControl(method = "cv", number = 5)
   
@@ -97,16 +101,13 @@ library(caret)
     cnt  ~ lagged_cnt + yr + mnth + I(mnth^2) + hr + I(hr^2) + holiday  +
       Spring + Summer + Fall + Winter + Monday + Tuesday + Wednesday + Thursday +
       Friday + Saturday + Sunday + weathersit + temp + I(temp^2) + atemp + hum + windspeed + (mnth*temp),
-    data = data_training_norm,
+    data = data_training,
     method = "lm",
     trControl = train_control)
   summary(lm_cv)
   
-  lm_cv$results 
-
   
-  ############################### GENERALIZATION #############################  
-  # EXPECTED LOSS
+  ############################### EXPECTED LOSS #############################  
 
   Expected_Loss_lm_cv <- mean((data_test[, cnt]-
                                   predict(lm_cv, newdata = data_test))^2)
@@ -118,7 +119,7 @@ library(caret)
   Expected_Loss_lm_cv_norm <- mean((data_test_norm[, cnt]-
                                  predict(lm_cv, newdata = data_test_norm))^2)
   Expected_Loss_lm_full_norm <- mean((data_test_norm[, cnt]-
-                                   predict(lm_full, newdata = data_test_norm))^2)
+                                   predict(lm_full_norm, newdata = data_test_norm))^2)
   Expected_Loss_lm_pca_full_norm <- mean((data_test_norm[, cnt]-
                                        predict(lm_pca_full, newdata = data_test_norm))^2)
   
