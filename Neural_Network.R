@@ -1,4 +1,15 @@
 # Neural Network
+# Authors: Hong Le, Tilman von Samson
+# 31.07.2023
+
+# Content:
+# 1. Data Preparation
+# 2. Visualization of the Neural Network
+# 3. NN Setup and Estimation
+# 4. Hyperparameter adjustments
+# 5. Rerun of NN on PCA Data
+# 6. Cross-Validation
+# 7. Perfomance on Test Data
 
 source("Data preparation.R")
 source("Linear_model.R")
@@ -22,48 +33,30 @@ library(tensorflow)
 
 
 
-# PREPARING THE DATA
-
-# Define dependent and independent variables
-  train_features <- data_training %>% select(-cnt) 
-  train_labels <- data_training %>% select(cnt)  # dependent (label)
-  
-  train_features_norm <- data_training_norm %>% select(-cnt) 
-  train_labels_norm <- data_training_norm %>% select(cnt)  # dependent (label)
-  
-  test_features <- data_test %>% select(-cnt) 
-  test_labels <- data_test %>% select(cnt)
-  
-  test_features_norm <- data_test_norm %>% select(-cnt)  
-  test_labels_norm <- data_test_norm %>% select(cnt)
+# 1. PREPARING THE DATA
 
 # Normalize to avoid scale issues first on train and then temp-sub dataset
   normalizer <- layer_normalization()  
   
   normalizer %>% adapt(as.matrix(train_features)) 
   
-  # For Hyperparameter loop use simple feature space
-  temp <- matrix(train_features$temp)  # create matrix
-  temp_normalizer <- layer_normalization() # set normalization layer
-  temp_normalizer %>% adapt(temp)  # adapt feature matrix to layer
-  
  
-############################## DEEP NEURAL NETWORKS#############################
-  # 1. Visualize Deep Neural Network
-  # 2. Multi feature input model (MAIN MODEL)
-  # 3. Varying learning rate over single feature input model
-  # 4. Re-run model on PCA Data
+############################# DEEP NEURAL NETWORKS #############################
+  # 2. Visualize Deep Neural Network
+  # 3. Multi feature input model (MAIN MODEL)
+  # 4. Hyperparameter settings: Varying learning rate and epochs
+  # 5. Re-run model on PCA Data
 
     
         ########################### MAIN MODEL ##############################
   
-# 1. Visualize with neuralnet function
+# 2. Visualize with neuralnet function
   # First define Neural Network
   dnn_viz <- neuralnet(cnt ~ yr+mnth+hr+holiday+weathersit+temp+atemp+hum+windspeed
                        +lagged_cnt+Spring+Summer+Fall+Winter+Sunday+Monday+Tuesday+
                          Wednesday+Thursday+Friday+Saturday,
                        data = data_training,
-                       hidden=c(16,16), # neurons in the hidden layers
+                       hidden=c(16,16,16), # neurons in the hidden layers
                        learningrate= 0.1,
                        algorithm = "backprop",
                        act.fct = "logistic",
@@ -75,11 +68,11 @@ library(tensorflow)
   plot(dnn_viz, fill="green", col.hidden.synapse="lightblue",
        show.weights=FALSE,
        information=FALSE)
-  
-  # 2. Setting up the model with Keras
-  build_and_compile_model <- function(norm) {
+
+# 3. Setting up the model with Keras 
+  build_and_compile_model <- function(norm) {     # Function that defines Network architecture and optimization parameter
     model <- keras_model_sequential() %>%
-      norm() %>%
+      norm() %>%                                  # Normalization Layer enters here
       layer_dense(16, activation = 'sigmoid') %>% # DNN with 3 layers 
       layer_dense(16, activation = 'sigmoid') %>% # and width of 16 neurons
       layer_dense(16, activation = 'sigmoid') %>%
@@ -108,25 +101,22 @@ library(tensorflow)
   
   plot(dnn_history)
   
-  
   # Store Model
   save_model_tf(dnn_model, 'dnn_model')
   
 
-         ###################### Hyperparameter #############################  
-  
-# 3. DEEP NEURAL NETWORK WITH VARYING LEARNING RATES
+# 4. HYPERPARAMETER
 
 # APPROACH:
-  # To inspect on varying settings of the learning rate on model performance we set-up 
-  # a loop within the deep neural network 
+  # To inspect on varying settings of the learning rate and epochs on model  
+  # performance we set-up a loop over the deep neural network 
   # Therefore: 
-  # 1. specify model with option of varying optimizer settings
-  # 2. Loop different DNNs on the training data and saver results in "training_histories"
-  # 3. Plot results in "training_histories" with a little plot loop
-  # 4. Apply similar loop to number of epochs
+  # a. specify model with option of varying optimizer settings
+  # b. Loop different DNNs on the training data and saver results in "training_histories"
+  # c. Plot results in "training_histories" with a little plot loop
+  # d. Apply similar loop to number of epochs
 
-  # 3.1 Function to build and compile the model with a given normalization and learning rate
+  # 4.a) Function to build and compile the model with a given normalization and learning rate
   build_and_compile_model_lr <- function(norm, learning_rate) {
     model <- keras_model_sequential() %>%
       norm() %>%
@@ -148,7 +138,7 @@ library(tensorflow)
   # List to store training histories
   training_histories <- list()
   
-  # 3.2 Loop through each learning rate and train the model
+  # 4.b) Loop through each learning rate and train the model
   for (lr in learning_rate) {
     # Create the model with the specified learning rate
     dnn_var_model <- build_and_compile_model_lr(normalizer, lr)
@@ -167,10 +157,10 @@ library(tensorflow)
   }
 
 
-  # 3.3 Plot all the training and validation losses together
+  # 4.c) Plot all the training and validation losses together
 
   # Save the plot as a PDF file
-    pdf("training_rates_plots.pdf")
+    pdf("training_rates_plots2.pdf")
   
     par(mfrow = c(1, length(learning_rate)))  # Plotting layout - arranges 3 plots side by side
     for (i in seq_along(learning_rate)) {    # loop that plots model-histories according to learning rate
@@ -187,7 +177,7 @@ library(tensorflow)
   dev.off()
 
   
-  # 4. Increasing number of epochs
+  # 4.d) Increasing the number of epochs
   epochs <- c(50, 100, 500)
   
   # store training histories
@@ -211,7 +201,7 @@ library(tensorflow)
   }
   
   # Save the plot as a PDF file
-  pdf("epochs1_plots.pdf")
+  pdf("epochs_plots2.pdf")
   
   par(mfrow = c(1, length(epochs)))  # Plotting layout - arranges 3 plots side by side
   for (i in seq_along(epochs)) {    # loop that plots model-histories according to learning rate
@@ -228,12 +218,13 @@ library(tensorflow)
   dev.off()
   
   
-# 4. RERUN MODEL on PCA dimensionality reduced data
-  pca_train_features <- feature_PC18 
+# 5. RERUN MODEL ON PCA DATA
+  pca_train_features <- feature_PC18  # Rename just for better oversight 
   pca_train_labels <- train_labels_norm
   
 
-# Same procedure with other data and no normalization layer as pca data already scaled
+  # Same procedure with other data and no normalization layer as pca data is 
+  # already scaled
   build_and_compile_model_pca <- function(norm) {
     model <- keras_model_sequential() %>%
       layer_dense(16, activation = 'sigmoid') %>% # DNN with 3 layers 
@@ -250,15 +241,14 @@ library(tensorflow)
     model
   }
   
-  dnn_pca_model <- build_and_compile_model_pca()   # store new model with same model-set up 
-  # but other Input Matrix
+  dnn_pca_model <- build_and_compile_model_pca()   # store new model with model-set up from above 
+  
   pca_history <- dnn_pca_model %>% fit(        # Run model with fit command
     as.matrix(pca_train_features),
     as.matrix(pca_train_labels),
     # validation_split = 0.2,
     verbose = 0,
     epochs = 100)
-  
   
   # Store Model
   save_model_tf(dnn_pca_model, 'dnn_pca_model')
@@ -268,9 +258,9 @@ library(tensorflow)
   plot(dnn_history)
 
 
-     ########################### CROSS-VALIDATION ########################  
+# 6.CROSS-VALIDATION
 
-  # OPTION 1: Using Keras Validation Split function
+# OPTION 1: Using Keras Validation Split function
   dnn_cv_model <- build_and_compile_model(normalizer)   # store new model with same model-set up 
   
   # Fitting the model
@@ -300,12 +290,12 @@ library(tensorflow)
   
   plot(dnn_cv_pca_history)
   
-  save_model_tf(dnn_cv_model, 'dnn_cv_pca_model')
+  save_model_tf(dnn_cv_pca_model, 'dnn_cv_pca_model')
   
 
-# OPTION 2: CROSS-VALIDATION BY LOOP 
+# OPTION 2: K-Fold CROSS-VALIDATION BY LOOP 
 
-    # K-fold Cross Validation
+  # K-folds
     K <- 5
   
   # Collect MSE across folds
@@ -321,7 +311,7 @@ library(tensorflow)
     dt_training <- split_K(data_training, K)
     
     for (i in 1:K) {
-    # Preprocessing goes here!
+    # Scaling within the Loop to avoid information leakage (mean and sd of "unseen" folds)
     dt_training_scaled <- data.table(scale(dt_training[id != i,]))
     dt_validation_scaled <- data.table(scale(dt_training[id == i,]))
     
@@ -344,7 +334,7 @@ library(tensorflow)
                                err.fct = "sse",   # sum of squared error as error function
                                linear.output = FALSE,
                                lifesign = "full", # Print outputs while running
-                               rep=100)  # needs to be one for visualization otherwise prints all reps.
+                               rep=100)  
     
   # Calculates the MSE on the validation fold using the trained model
     test_predictions <- predict(dnn_cv_model2, as.matrix(validation_features)) # Error from predict - only NA's
@@ -364,8 +354,7 @@ library(tensorflow)
 
     
     
-# PERFORMANCE
-
+# 7. PEFROMANCE ON TEST DATA
   
   # Expected loss 
     #  Model dnn
@@ -375,8 +364,11 @@ library(tensorflow)
     #  Model dnn_cv
     dnn_cv_test_predictions <- predict(dnn_cv_model, as.matrix(test_features))
     Expected_loss_dnn_cv <- mean((as.matrix(test_labels) - dnn_cv_test_predictions)^2)
+    #  Model dnn_cv
+    dnn_cv_pca_test_predictions <- predict(dnn_cv_pca_model, as.matrix(test_features))
+    Expected_loss_dnn_cv_pca <- mean((as.matrix(test_labels) - dnn_cv_test_predictions)^2)
     
-    #  Model dnn_pca on non-normalized test data
+    #  Model dnn_pca 
     dnn_pca_test_predictions <- predict(dnn_pca_model, as.matrix(test_features))
     Expected_loss_dnn_pca <- mean((as.matrix(test_labels) - dnn_pca_test_predictions)^2)
   

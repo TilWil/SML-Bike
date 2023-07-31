@@ -1,4 +1,6 @@
 # Data preparation
+# Authors: Hong Le, Tilman von Samson
+# 31.07.2023
 
 # source("Packages.R")
 
@@ -7,11 +9,12 @@ rm(list = ls())
 library(dplyr)
 library(data.table)
 
-# data <- read.csv("C:\\Users\\tilma\\Documents\\Uni\\Master Economics\\Machine Learning\\Statistical Machine Learning\\Data\\hour.csv")
+# Read CSV file
 data <- fread(file = "C:\\Users\\tilma\\Documents\\Uni\\Master Economics\\Machine Learning\\Statistical Machine Learning\\Data\\hour.csv", sep = ",")
 
 # Display data format
 str(data)           # all num or int except dteday which is chr
+
 # First glimpse at first rows
 head(data)
 
@@ -23,9 +26,6 @@ data <- na.omit(data)
 # Add lagged count 
 data <- data %>%
   mutate(lagged_cnt = lag(cnt, default=0))
-
-# drop "dteday" as all information already contained in other variables
-data$dteday <- NULL
 
 # DUMMYS
 
@@ -50,20 +50,14 @@ colnames(weekday_dummies) <- levels(data$weekday)
 data <- cbind(data, season_dummies, weekday_dummies)
 
 # Remove the original variables
-data <- data[, !"season", with = FALSE]
-data <- data[, !"weekday", with = FALSE]
-data <- data[, !"instant", with = FALSE]
-data <- data[, !"registered", with = FALSE] # need to exclude both as they are 
-data <- data[, !"casual", with = FALSE]     # sub-measures of the label "cnt"
-data <- data[, !"workingday", with = FALSE]
-
-
+data <- subset(data, select = -c(dteday, season, weekday, instant, registered, casual))
 
 
 # Convert all variables to numeric using lapply and as.numeric
 data[] <- lapply(data, as.numeric)
 
 # Create Test and Training dataset (80% of data) and test dataset (20% of data)
+set.seed(123456)
 training_sample <- data[,sample(.N, floor(.N*.80))]
 data_training <- data[training_sample]
 data_test <- data[-training_sample]
@@ -78,14 +72,21 @@ data_test_norm <- data.table(scale(data[-training_sample]))
 
 # Get standardized data
 dt_pca <- data.table(scale(data_training))
+feature_pca <- data.table(scale(data_training[, -"cnt"]))  # only features to avoid information leakage on dependent
 
 # Decompose covariance matrix in principal components with prcomp command
-model_pca <- prcomp(dt_pca) 
+model_pca <- prcomp(dt_pca)
+model_pca <- prcomp(feature_pca)   
+
 
 # Compute PC reduced dataset
 X <- as.matrix(dt_pca[,])
 V18_reduced <- model_pca$rotation[,1:18] 
 data_PC18 <- data.table(X %*% V18_reduced %*% t(V18_reduced))
+
+X <- as.matrix(feature_pca[,])
+V18_reduced <- model_pca$rotation[,1:18] 
+feature_PC18 <- data.table(X %*% V18_reduced %*% t(V18_reduced))
 
 X <- as.matrix(dt_pca[,])
 V14_reduced <- model_pca$rotation[,1:14] 

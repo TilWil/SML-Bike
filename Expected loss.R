@@ -1,4 +1,6 @@
 # EXPECTED LOSS SUMMARY
+# Authors: Hong Le, Tilman von Samson
+# 31.07.2023
 
 # source("Linear_model.R")
 # source("Neural_Network.R")
@@ -11,7 +13,7 @@ Expected_Loss_lm_full <- mean((data_test[, cnt]-
                                  predict(lm_full, newdata = data_test))^2)
 Expected_Loss_lm_pca_full <- mean((data_test[, cnt]-
                                      predict(lm_pca_full, newdata = data_test))^2)
-
+# With normalized test data
 Expected_Loss_lm_cv_norm <- mean((data_test_norm[, cnt]-
                                     predict(lm_cv, newdata = data_test_norm))^2)
 Expected_Loss_lm_full_norm <- mean((data_test_norm[, cnt]-
@@ -19,19 +21,19 @@ Expected_Loss_lm_full_norm <- mean((data_test_norm[, cnt]-
 Expected_Loss_lm_pca_full_norm <- mean((data_test_norm[, cnt]-
                                           predict(lm_pca_full, newdata = data_test_norm))^2)
 
-#  Model dnn
+# Model dnn
 dnn_test_predictions <- predict(dnn_model, as.matrix(test_features))
 Expected_loss_dnn <- mean((as.matrix(test_labels) - dnn_test_predictions)^2)
 
-#  Model dnn_cv
+# Model dnn_cv
 dnn_cv_test_predictions <- predict(dnn_cv_model, as.matrix(test_features))
 Expected_loss_dnn_cv <- mean((as.matrix(test_labels) - dnn_cv_test_predictions)^2)
 
 # Model dnn_cv_pca
-dnn_cv_test_predictions <- predict(dnn_cv_pca_model, as.matrix(test_features))
-Expected_loss_dnn_cv_pca <- mean((as.matrix(test_labels) - dnn_cv_test_predictions)^2)
+dnn_cv_pca_test_predictions <- predict(dnn_cv_pca_model, as.matrix(test_features))
+Expected_loss_dnn_cv_pca <- mean((as.matrix(test_labels) - dnn_cv_pca_test_predictions)^2)
 
-#  Model dnn_pca on non-normalized test data
+# Model dnn_pca 
 dnn_pca_test_predictions <- predict(dnn_pca_model, as.matrix(test_features))
 Expected_loss_dnn_pca <- mean((as.matrix(test_labels) - dnn_pca_test_predictions)^2)
 
