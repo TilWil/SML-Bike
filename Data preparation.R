@@ -65,32 +65,40 @@ data_test <- data[-training_sample]
 data_training_norm <- data.table(scale(data[training_sample]))
 data_test_norm <- data.table(scale(data[-training_sample]))
 
+# Define dependent and independent variables
+train_features <- data_training %>% select(-cnt) 
+train_labels <- data_training %>% select(cnt)  # dependent (label)
+
+test_features <- data_test %>% select(-cnt) 
+test_labels <- data_test %>% select(cnt)
 
 
 ################ DIMENSIONALITY REDUCED DATA #################
 # Derivation of number of reduced PCs in PCA file 
 
 # Get standardized data
-dt_pca <- data.table(scale(data_training))
-feature_pca <- data.table(scale(data_training[, -"cnt"]))  # only features to avoid information leakage on dependent
+dt_pca <- data.table(scale(train_features))
 
 # Decompose covariance matrix in principal components with prcomp command
 model_pca <- prcomp(dt_pca)
-model_pca <- prcomp(feature_pca)   
-
 
 # Compute PC reduced dataset
 X <- as.matrix(dt_pca[,])
-V18_reduced <- model_pca$rotation[,1:18] 
-data_PC18 <- data.table(X %*% V18_reduced %*% t(V18_reduced))
-
-X <- as.matrix(feature_pca[,])
-V18_reduced <- model_pca$rotation[,1:18] 
-feature_PC18 <- data.table(X %*% V18_reduced %*% t(V18_reduced))
+V17_reduced <- model_pca$rotation[,1:17] 
+data_PC17 <- data.table(X %*% V17_reduced %*% t(V17_reduced))
 
 X <- as.matrix(dt_pca[,])
 V14_reduced <- model_pca$rotation[,1:14] 
 data_PC14 <- data.table(X %*% V14_reduced %*% t(V14_reduced))
+
+# Only features to avoid information leakage on dependent
+feature_pca <- data.table(scale(data_training[, -"cnt"]))  
+model_feature_pca <- prcomp(feature_pca)   
+
+X <- as.matrix(feature_pca[,])
+V17_reduced <- model_feature_pca$rotation[,1:17] 
+feature_PC17 <- data.table(X %*% V17_reduced %*% t(V17_reduced))
+
 
 
 # END

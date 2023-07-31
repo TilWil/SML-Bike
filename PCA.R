@@ -19,7 +19,7 @@ library(reshape2)
 
 # 1. NORMALIZATION AND COVARIANCE MATRIX
   # Get standardized data
-  dt_pca <- data.table(scale(train_features))
+  dt_pca <- data.table(scale(data_training))
   
   # Decompose covariance matrix in principal components with prcomp command
   model_pca <- prcomp(dt_pca) 
@@ -99,12 +99,20 @@ library(reshape2)
 # (Copy in Data preparation file )
 
   X <- as.matrix(dt_pca[,])
-  V17_reduced <- model_pca$rotation[,1:17] 
-  data_PC17 <- data.table(X %*% V17_reduced %*% t(V17_reduced))
+  V17_reduced <- model_pca$rotation[,1:18] 
+  data_PC18 <- data.table(X %*% V17_reduced %*% t(V17_reduced))
   
   # Alternatively 90% accuracy with 14 PC
   X <- as.matrix(dt_pca[,])
   V14_reduced <- model_pca$rotation[,1:14] 
   data_PC14 <- data.table(X %*% V14_reduced %*% t(V14_reduced))
+  
+  # Only features to avoid information leakage on dependent
+  feature_pca <- data.table(scale(data_training[, -"cnt"]))  
+  model_feature_pca <- prcomp(feature_pca)   
+  
+  X <- as.matrix(feature_pca[,])
+  V17_reduced <- model_feature_pca$rotation[,1:17] 
+  feature_PC17 <- data.table(X %*% V17_reduced %*% t(V17_reduced))
 
 # End
